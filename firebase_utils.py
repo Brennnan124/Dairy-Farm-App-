@@ -21,17 +21,22 @@ def get_firebase_app():
             config = st.secrets["firebase_config"]
             st.write("Loaded config:", {k: v[:10] + "..." if k == "private_key" else v for k, v in config.items()})  # Debug partial config
 
-            # Create a new config dict with modified private_key
-            modified_config = config.copy()
-            if isinstance(config.get("private_key"), str):
-                private_key = config["private_key"].replace("\\n", "\n")
-                if not private_key.startswith("-----BEGIN PRIVATE KEY-----"):
-                    st.error("Invalid 'private_key' format after processing.")
-                    st.session_state.firebase_initialized = False
-                    return None
-                modified_config["private_key"] = private_key
-            else:
-                st.error("Invalid 'private_key' type in Firebase config.")
+            # Manually create a new config dict with modified private_key
+            modified_config = {
+                "type": config.get("type"),
+                "project_id": config.get("project_id"),
+                "private_key_id": config.get("private_key_id"),
+                "private_key": config.get("private_key", "").replace("\\n", "\n") if isinstance(config.get("private_key"), str) else "",
+                "client_email": config.get("client_email"),
+                "client_id": config.get("client_id"),
+                "auth_uri": config.get("auth_uri"),
+                "token_uri": config.get("token_uri"),
+                "auth_provider_x509_cert_url": config.get("auth_provider_x509_cert_url"),
+                "client_x509_cert_url": config.get("client_x509_cert_url"),
+                "universe_domain": config.get("universe_domain")
+            }
+            if not modified_config["private_key"].startswith("-----BEGIN PRIVATE KEY-----"):
+                st.error("Invalid 'private_key' format after processing.")
                 st.session_state.firebase_initialized = False
                 return None
 
@@ -40,7 +45,7 @@ def get_firebase_app():
                 'type', 'project_id', 'private_key_id', 'private_key',
                 'client_email', 'client_id', 'auth_uri', 'token_uri'
             ]
-            missing_fields = [field for field in required_fields if field not in modified_config]
+            missing_fields = [field for field in required_fields if not modified_config.get(field)]
             if missing_fields:
                 st.error(f"Invalid Firebase config: Missing fields: {', '.join(missing_fields)}.")
                 st.session_state.firebase_initialized = False
