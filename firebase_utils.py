@@ -23,6 +23,7 @@ def get_firebase_app():
 
             # Parse the JSON string into a dictionary
             config = json.loads(firebase_config_str)
+            st.write("Parsed Firebase config:", config)  # Debug: Log the parsed config
 
             # Validate required fields
             required_fields = ['type', 'project_id', 'private_key_id', 'private_key', 'client_email', 'client_id', 'auth_uri', 'token_uri']
@@ -45,21 +46,23 @@ def get_firebase_app():
             if not firebase_admin._apps:
                 cred = credentials.Certificate(config)  # Use the parsed config dictionary
                 firebase_admin.initialize_app(cred)
+                st.write("Firebase app initialized successfully")  # Debug: Confirm initialization
+                db = firestore.client()
                 st.session_state.firebase_initialized = True
-            else:
-                st.session_state.firebase_initialized = True
-
+                return db
+            st.session_state.firebase_initialized = True
+            st.write("Reusing existing Firebase app")  # Debug: Reuse check
             return firestore.client()
         except json.JSONDecodeError:
             st.error("Firebase config is not a valid JSON string.")
             st.session_state.firebase_initialized = False
             return None
         except ValueError as e:
-            st.error(f"Firebase initialization error: {str(e)}.")
+            st.error(f"Firebase initialization error: {str(e)}")
             st.session_state.firebase_initialized = False
             return None
         except Exception as e:
-            st.error(f"Firebase initialization error: {str(e)}.")
+            st.error(f"Firebase initialization error: {str(e)}")
             st.session_state.firebase_initialized = False
             return None
     return firestore.client() if st.session_state.firebase_initialized else None
@@ -72,8 +75,10 @@ def initialize_firebase():
 
 def get_collection(collection_name):
     if not db:
-        return pd.DataFrame()  # Return empty DataFrame silently
+        st.error("Firestore client not initialized")
+        return pd.DataFrame()  # Return empty DataFrame with error message
     try:
+        st.write(f"Attempting to retrieve data from collection: {collection_name}")  # Debug: Log collection access
         docs = db.collection(collection_name).stream()
         data = []
         for doc in docs:
@@ -81,7 +86,9 @@ def get_collection(collection_name):
             if doc_data:
                 doc_data['id'] = doc.id
                 data.append(doc_data)
-        return pd.DataFrame(data)
+        df = pd.DataFrame(data)
+        st.write(f"Retrieved data from {collection_name}: {df}")  # Debug: Log retrieved data
+        return df
     except Exception as e:
         st.error(f"Error reading from {collection_name}: {e}")
         return pd.DataFrame()
