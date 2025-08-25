@@ -1,8 +1,7 @@
 # dairy_farm_app/utils/data_loader.py
 import pandas as pd
 from datetime import date
-from ..firebase_utils import get_collection  # Relative import from parent (root) directory
-
+from firebase_utils import get_collection
 def load_table(table_name: str) -> pd.DataFrame:
     return get_collection(table_name)
 
