@@ -11,7 +11,6 @@ import requests
 def get_firebase_app():
     """Initialize and return the Firebase app and Firestore client for Streamlit Cloud."""
     if 'firebase_initialized' not in st.session_state:
-        st.write("Attempting to initialize Firebase with secrets...")
         try:
             if "firebase_config" not in st.secrets:
                 st.error("Firebase config not found in Streamlit Secrets on Cloud.")
@@ -19,7 +18,6 @@ def get_firebase_app():
                 return None
 
             config = st.secrets["firebase_config"]
-            st.write("Loaded config:", {k: v[:10] + "..." if k == "private_key" else v for k, v in config.items()})  # Debug partial config
 
             # Manually create a new config dict with modified private_key
             modified_config = {
@@ -57,13 +55,10 @@ def get_firebase_app():
                 return None
 
             if not firebase_admin._apps:
-                st.write("Initializing Firebase app...")
                 cred = credentials.Certificate(modified_config)
                 firebase_admin.initialize_app(cred)
-                st.write("Firebase app initialized successfully.")
                 st.session_state.firebase_initialized = True
             else:
-                st.write("Firebase app already initialized, reusing.")
                 st.session_state.firebase_initialized = True
 
             return firestore.client()
