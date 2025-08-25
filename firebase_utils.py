@@ -35,38 +35,36 @@ def get_firebase_app():
     """Initialize and return the Firebase app and Firestore client."""
     if 'firebase_initialized' not in st.session_state:
         try:
-            if not os.path.exists("firebase_config.json"):
-                st.error("Firebase configuration file 'firebase_config.json' not found.")
-                st.session_state.firebase_initialized = False
-                return None
-            
-            if not os.access("firebase_config.json", os.R_OK):
-                st.error("Cannot read 'firebase_config.json'. Check file permissions.")
+            # Get the Firebase config from Streamlit secret
+            firebase_config_str = os.getenv("FIREBASE_CONFIG")
+            if not firebase_config_str:
+                st.error("FIREBASE_CONFIG secret not found. Please set it in Streamlit Secrets.")
                 st.session_state.firebase_initialized = False
                 return None
 
-            with open("firebase_config.json", 'r') as f:
-                config = json.load(f)
-            
+            # Parse the JSON string into a dictionary
+            config = json.loads(firebase_config_str)
+
+            # Validate required fields
             required_fields = ['type', 'project_id', 'private_key_id', 'private_key', 'client_email', 'client_id', 'auth_uri', 'token_uri']
             missing_fields = [field for field in required_fields if field not in config]
             if missing_fields:
-                st.error(f"Invalid 'firebase_config.json': Missing fields: {', '.join(missing_fields)}.")
+                st.error(f"Invalid Firebase config: Missing fields: {', '.join(missing_fields)}.")
                 st.session_state.firebase_initialized = False
                 return None
-            
+
             if not isinstance(config.get('private_key'), str) or not config['private_key'].startswith('-----BEGIN PRIVATE KEY-----'):
-                st.error("Invalid 'private_key' in 'firebase_config.json'.")
+                st.error("Invalid 'private_key' in Firebase config.")
                 st.session_state.firebase_initialized = False
                 return None
-            
+
             if not re.match(r'^[a-z0-9-]{6,30}$', config['project_id']):
-                st.error(f"Invalid 'project_id' in 'firebase_config.json': {config['project_id']}.")
+                st.error(f"Invalid 'project_id' in Firebase config: {config['project_id']}.")
                 st.session_state.firebase_initialized = False
                 return None
 
             if not firebase_admin._apps:
-                cred = credentials.Certificate("firebase_config.json")
+                cred = credentials.Certificate(config)  # Use the parsed config dictionary
                 firebase_admin.initialize_app(cred)
                 db = firestore.client()
                 st.session_state.firebase_initialized = True
@@ -74,7 +72,7 @@ def get_firebase_app():
             st.session_state.firebase_initialized = True
             return firestore.client()
         except json.JSONDecodeError:
-            st.error("firebase_config.json is not a valid JSON file.")
+            st.error("Firebase config is not a valid JSON string.")
             st.session_state.firebase_initialized = False
             return None
         except ValueError as e:
