@@ -2,17 +2,6 @@ import streamlit as st
 import time
 from datetime import date
 from utils.data_loader import load_table, to_date
-import firebase_admin
-from firebase_admin import credentials
-
-# Initialize Firebase at the start
-try:
-    firebase_config = st.secrets["firebase_config"]
-    cred = credentials.Certificate(firebase_config)
-    firebase_admin.initialize_app(cred)
-except Exception as e:
-    st.error("Firebase initialization failed. Check secrets and logs.")
-    st.stop()
 
 def main():
     st.set_page_config(page_title="Dairy Farm Management", page_icon="🐄", layout="wide")
