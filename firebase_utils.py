@@ -6,29 +6,8 @@ import re
 import pandas as pd
 import firebase_admin
 from datetime import datetime
-from firebase_admin import credentials, firestore
-from dotenv import load_dotenv
-import pyrebase
+from firebase_admin import credentials, firestore, auth
 import requests
-
-load_dotenv()
-
-firebase_config = {
-    "apiKey": os.getenv("FIREBASE_API_KEY"),
-    "authDomain": os.getenv("FIREBASE_AUTH_DOMAIN"),
-    "projectId": os.getenv("FIREBASE_PROJECT_ID"),
-    "storageBucket": os.getenv("FIREBASE_STORAGE_BUCKET"),
-    "messagingSenderId": os.getenv("FIREBASE_MESSAGING_SENDER_ID"),
-    "appId": os.getenv("FIREBASE_APP_ID"),
-    "databaseURL": ""
-}
-
-try:
-    firebase = pyrebase.initialize_app(firebase_config)
-    auth_client = firebase.auth()
-except Exception as e:
-    st.error(f"Failed to initialize Firebase client: {e}")
-    auth_client = None
 
 @st.cache_resource
 def get_firebase_app():
@@ -66,10 +45,10 @@ def get_firebase_app():
             if not firebase_admin._apps:
                 cred = credentials.Certificate(config)  # Use the parsed config dictionary
                 firebase_admin.initialize_app(cred)
-                db = firestore.client()
                 st.session_state.firebase_initialized = True
-                return db
-            st.session_state.firebase_initialized = True
+            else:
+                st.session_state.firebase_initialized = True
+
             return firestore.client()
         except json.JSONDecodeError:
             st.error("Firebase config is not a valid JSON string.")
@@ -145,6 +124,15 @@ def log_audit_event(user, action, details=""):
         "action": action,
         "details": details
     })
+
+def verify_id_token(id_token):
+    """Verify a Firebase ID token and return user info."""
+    try:
+        decoded_token = auth.verify_id_token(id_token)
+        return decoded_token
+    except auth.AuthError as e:
+        st.error(f"Authentication error: {str(e)}")
+        return None
 
 # Check connectivity and notify user
 def is_online():
