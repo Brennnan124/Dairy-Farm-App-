@@ -84,7 +84,6 @@ def get_collection(collection_name):
         st.error("Firebase not initialized on Cloud.")
         return pd.DataFrame()
     try:
-        st.write(f"Attempting to fetch data from collection: {collection_name}")
         docs = db.collection(collection_name).stream()
         data = []
         for doc in docs:
@@ -92,9 +91,7 @@ def get_collection(collection_name):
             if doc_data:
                 doc_data['id'] = doc.id
                 data.append(doc_data)
-        df = pd.DataFrame(data)
-        st.write(f"Successfully loaded {len(df)} rows from {collection_name}")
-        return df
+        return pd.DataFrame(data)
     except Exception as e:
         st.error(f"Error reading from {collection_name} on Cloud: {e}")
         return pd.DataFrame()
