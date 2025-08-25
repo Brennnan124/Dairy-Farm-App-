@@ -1,6 +1,4 @@
-# dairy_farm_app/firebase_utils.py
 import streamlit as st
-import os
 import json
 import re
 import pandas as pd
@@ -11,19 +9,23 @@ import requests
 
 @st.cache_resource
 def get_firebase_app():
-    """Initialize and return the Firebase app and Firestore client."""
+    """Initialize and return the Firebase app and Firestore client for Streamlit Cloud."""
     if 'firebase_initialized' not in st.session_state:
         try:
-            # Prefer Streamlit secrets, fallback to environment variable
-            if "firebase_config" in st.secrets:
-                config = st.secrets["firebase_config"]
+            # Use Streamlit secrets (no local file fallback for Cloud)
+            if "firebase_config" not in st.secrets:
+                st.error("Firebase config not found in Streamlit Secrets on Cloud.")
+                st.session_state.firebase_initialized = False
+                return None
+
+            config = st.secrets["firebase_config"]
+            # Ensure private_key is a string with proper newlines
+            if isinstance(config.get("private_key"), str):
+                config["private_key"] = config["private_key"].replace("\\n", "\n").replace("\n", "\n")
             else:
-                firebase_config_str = os.getenv("FIREBASE_CONFIG")
-                if not firebase_config_str:
-                    st.error("Firebase config not found. Please set it in Streamlit Secrets or environment.")
-                    st.session_state.firebase_initialized = False
-                    return None
-                config = json.loads(firebase_config_str)
+                st.error("Invalid 'private_key' type in Firebase config.")
+                st.session_state.firebase_initialized = False
+                return None
 
             # Validate required fields
             required_fields = [
@@ -36,8 +38,8 @@ def get_firebase_app():
                 st.session_state.firebase_initialized = False
                 return None
 
-            if not isinstance(config.get('private_key'), str) or not config['private_key'].startswith('-----BEGIN PRIVATE KEY-----'):
-                st.error("Invalid 'private_key' in Firebase config.")
+            if not config['private_key'].startswith('-----BEGIN PRIVATE KEY-----'):
+                st.error("Invalid 'private_key' format in Firebase config.")
                 st.session_state.firebase_initialized = False
                 return None
 
@@ -47,23 +49,15 @@ def get_firebase_app():
                 return None
 
             if not firebase_admin._apps:
-                cred = credentials.Certificate(config)  # Use dict directly
+                cred = credentials.Certificate(config)  # Use dict from secrets
                 firebase_admin.initialize_app(cred)
                 st.session_state.firebase_initialized = True
             else:
                 st.session_state.firebase_initialized = True
 
             return firestore.client()
-        except json.JSONDecodeError:
-            st.error("Firebase config is not a valid JSON string.")
-            st.session_state.firebase_initialized = False
-            return None
-        except ValueError as e:
-            st.error(f"Firebase initialization error: {str(e)}.")
-            st.session_state.firebase_initialized = False
-            return None
         except Exception as e:
-            st.error(f"Firebase initialization error: {str(e)}.")
+            st.error(f"Firebase initialization error on Cloud: {str(e)}.")
             st.session_state.firebase_initialized = False
             return None
     return firestore.client() if st.session_state.firebase_initialized else None
@@ -76,7 +70,8 @@ def initialize_firebase():
 
 def get_collection(collection_name):
     if not db:
-        return pd.DataFrame()  # Return empty DataFrame silently
+        st.error("Firebase not initialized on Cloud.")
+        return pd.DataFrame()  # Return empty DataFrame
     try:
         docs = db.collection(collection_name).stream()
         data = []
@@ -87,7 +82,7 @@ def get_collection(collection_name):
                 data.append(doc_data)
         return pd.DataFrame(data)
     except Exception as e:
-        st.error(f"Error reading from {collection_name}: {e}")
+        st.error(f"Error reading from {collection_name} on Cloud: {e}")
         return pd.DataFrame()
 
 def add_document(collection_name, data):
@@ -97,7 +92,7 @@ def add_document(collection_name, data):
         db.collection(collection_name).add(data)
         return True
     except Exception as e:
-        st.error(f"Error adding to {collection_name}: {e}")
+        st.error(f"Error adding to {collection_name} on Cloud: {e}")
         return False
 
 def update_document(collection_name, doc_id, data):
@@ -107,7 +102,7 @@ def update_document(collection_name, doc_id, data):
         db.collection(collection_name).document(doc_id).update(data)
         return True
     except Exception as e:
-        st.error(f"Error updating {collection_name}/{doc_id}: {e}")
+        st.error(f"Error updating {collection_name}/{doc_id} on Cloud: {e}")
         return False
 
 def delete_document(collection_name, doc_id):
@@ -117,7 +112,7 @@ def delete_document(collection_name, doc_id):
         db.collection(collection_name).document(doc_id).delete()
         return True
     except Exception as e:
-        st.error(f"Error deleting {collection_name}/{doc_id}: {e}")
+        st.error(f"Error deleting {collection_name}/{doc_id} on Cloud: {e}")
         return False
 
 def log_audit_event(user, action, details=""):
@@ -135,7 +130,7 @@ def verify_id_token(id_token):
         decoded_token = auth.verify_id_token(id_token)
         return decoded_token
     except auth.AuthError as e:
-        st.error(f"Authentication error: {str(e)}")
+        st.error(f"Authentication error on Cloud: {str(e)}")
         return None
 
 # Check connectivity and notify user
@@ -144,8 +139,7 @@ def is_online():
         requests.get("https://www.google.com", timeout=5)
         return True
     except:
-        st.warning("Offline mode: Data will sync when connected.")
+        st.warning("Offline mode on Cloud: Data will sync when connected.")
         return False
 
 is_online()  # Run on app load to display status
-
