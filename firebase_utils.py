@@ -11,17 +11,24 @@ import requests
 def get_firebase_app():
     """Initialize and return the Firebase app and Firestore client for Streamlit Cloud."""
     if 'firebase_initialized' not in st.session_state:
+        st.write("Attempting to initialize Firebase with secrets...")
         try:
-            # Use Streamlit secrets (no local file fallback for Cloud)
             if "firebase_config" not in st.secrets:
                 st.error("Firebase config not found in Streamlit Secrets on Cloud.")
                 st.session_state.firebase_initialized = False
                 return None
 
             config = st.secrets["firebase_config"]
+            st.write("Loaded config:", {k: v[:10] + "..." if k == "private_key" else v for k, v in config.items()})  # Debug partial config
+
             # Ensure private_key is a string with proper newlines
             if isinstance(config.get("private_key"), str):
-                config["private_key"] = config["private_key"].replace("\\n", "\n").replace("\n", "\n")
+                private_key = config["private_key"].replace("\\n", "\n").replace("\n", "\n")
+                if not private_key.startswith("-----BEGIN PRIVATE KEY-----"):
+                    st.error("Invalid 'private_key' format after processing.")
+                    st.session_state.firebase_initialized = False
+                    return None
+                config["private_key"] = private_key
             else:
                 st.error("Invalid 'private_key' type in Firebase config.")
                 st.session_state.firebase_initialized = False
@@ -38,26 +45,24 @@ def get_firebase_app():
                 st.session_state.firebase_initialized = False
                 return None
 
-            if not config['private_key'].startswith('-----BEGIN PRIVATE KEY-----'):
-                st.error("Invalid 'private_key' format in Firebase config.")
-                st.session_state.firebase_initialized = False
-                return None
-
             if not re.match(r'^[a-z0-9-]{6,30}$', config['project_id']):
                 st.error(f"Invalid 'project_id' in Firebase config: {config['project_id']}.")
                 st.session_state.firebase_initialized = False
                 return None
 
             if not firebase_admin._apps:
-                cred = credentials.Certificate(config)  # Use dict from secrets
+                st.write("Initializing Firebase app...")
+                cred = credentials.Certificate(config)
                 firebase_admin.initialize_app(cred)
+                st.write("Firebase app initialized successfully.")
                 st.session_state.firebase_initialized = True
             else:
+                st.write("Firebase app already initialized, reusing.")
                 st.session_state.firebase_initialized = True
 
             return firestore.client()
         except Exception as e:
-            st.error(f"Firebase initialization error on Cloud: {str(e)}.")
+            st.error(f"Firebase initialization error on Cloud: {str(e)}")
             st.session_state.firebase_initialized = False
             return None
     return firestore.client() if st.session_state.firebase_initialized else None
@@ -71,8 +76,9 @@ def initialize_firebase():
 def get_collection(collection_name):
     if not db:
         st.error("Firebase not initialized on Cloud.")
-        return pd.DataFrame()  # Return empty DataFrame
+        return pd.DataFrame()
     try:
+        st.write(f"Attempting to fetch data from collection: {collection_name}")
         docs = db.collection(collection_name).stream()
         data = []
         for doc in docs:
@@ -80,7 +86,9 @@ def get_collection(collection_name):
             if doc_data:
                 doc_data['id'] = doc.id
                 data.append(doc_data)
-        return pd.DataFrame(data)
+        df = pd.DataFrame(data)
+        st.write(f"Successfully loaded {len(df)} rows from {collection_name}")
+        return df
     except Exception as e:
         st.error(f"Error reading from {collection_name} on Cloud: {e}")
         return pd.DataFrame()
@@ -133,7 +141,6 @@ def verify_id_token(id_token):
         st.error(f"Authentication error on Cloud: {str(e)}")
         return None
 
-# Check connectivity and notify user
 def is_online():
     try:
         requests.get("https://www.google.com", timeout=5)
