@@ -7,5 +7,3 @@ python-dotenv>=1.0.0
 reportlab>=4.0.4
 python-dateutil>=2.8.2
 sendgrid
-pyrebase4==4.5.0
-setuptools
