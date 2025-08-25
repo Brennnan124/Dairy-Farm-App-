@@ -21,14 +21,15 @@ def get_firebase_app():
             config = st.secrets["firebase_config"]
             st.write("Loaded config:", {k: v[:10] + "..." if k == "private_key" else v for k, v in config.items()})  # Debug partial config
 
-            # Ensure private_key is a string with proper newlines
+            # Create a new config dict with modified private_key
+            modified_config = config.copy()
             if isinstance(config.get("private_key"), str):
-                private_key = config["private_key"].replace("\\n", "\n").replace("\n", "\n")
+                private_key = config["private_key"].replace("\\n", "\n")
                 if not private_key.startswith("-----BEGIN PRIVATE KEY-----"):
                     st.error("Invalid 'private_key' format after processing.")
                     st.session_state.firebase_initialized = False
                     return None
-                config["private_key"] = private_key
+                modified_config["private_key"] = private_key
             else:
                 st.error("Invalid 'private_key' type in Firebase config.")
                 st.session_state.firebase_initialized = False
@@ -39,20 +40,20 @@ def get_firebase_app():
                 'type', 'project_id', 'private_key_id', 'private_key',
                 'client_email', 'client_id', 'auth_uri', 'token_uri'
             ]
-            missing_fields = [field for field in required_fields if field not in config]
+            missing_fields = [field for field in required_fields if field not in modified_config]
             if missing_fields:
                 st.error(f"Invalid Firebase config: Missing fields: {', '.join(missing_fields)}.")
                 st.session_state.firebase_initialized = False
                 return None
 
-            if not re.match(r'^[a-z0-9-]{6,30}$', config['project_id']):
-                st.error(f"Invalid 'project_id' in Firebase config: {config['project_id']}.")
+            if not re.match(r'^[a-z0-9-]{6,30}$', modified_config['project_id']):
+                st.error(f"Invalid 'project_id' in Firebase config: {modified_config['project_id']}.")
                 st.session_state.firebase_initialized = False
                 return None
 
             if not firebase_admin._apps:
                 st.write("Initializing Firebase app...")
-                cred = credentials.Certificate(config)
+                cred = credentials.Certificate(modified_config)
                 firebase_admin.initialize_app(cred)
                 st.write("Firebase app initialized successfully.")
                 st.session_state.firebase_initialized = True
