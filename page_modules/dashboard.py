@@ -80,11 +80,11 @@ def dashboard_page(role, username):
                     fr_type = st.text_input("Enter New Feed Type", key="fr_custom_type")
                 else:
                     fr_type = st.selectbox("Feed Type", existing_feeds, key="fr_type")
-                fr_qty = st.number_input("Quantity (kg)", min_value=0.0, max_value=100000.0, key="fr_qty")
-                fr_cost = st.number_input("Total Cost (KES)", min_value=0, max_value=10000000, step=1, value=0, key="fr_cost")
+                fr_qty = st.number_input("Quantity (kg)", min_value=0.0, max_value=10000.0, key="fr_qty")
+                fr_cost = st.number_input("Total Cost (KES)", min_value=0.0, max_value=10000.0, key="fr_cost")
                 if st.button("Save Feed Received", key="save_fr_btn"):
                     if fr_qty <= 0 or fr_cost < 0:
-                        st.warning("Quantity must be > 0 and cost cannot be negative.")
+                        st.warning("Quantity and cost must be > 0.")
                     elif not fr_type.strip():
                         st.warning("Feed type is required.")
                     else:
@@ -92,7 +92,7 @@ def dashboard_page(role, username):
                             "date": date.today().isoformat(),
                             "feed_type": fr_type.strip(),
                             "quantity": float(fr_qty),  # Store as float
-                            "cost": fr_cost             # Keep as integer for cost
+                            "cost": float(fr_cost)      # Store as float
                         })
                         st.success("Feed receipt recorded.")
                         log_audit_event(username, "FEED_RECEIVED", f"{fr_qty}kg of {fr_type} for KES {fr_cost}")
