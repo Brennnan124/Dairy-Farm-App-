@@ -57,19 +57,17 @@ def main():
 
         page = st.sidebar.selectbox("Go to", nav_options, key="page_select")
 
-    # Force sidebar to hide on any page change
-    if st.session_state.last_page != page:
-        st.session_state.show_sidebar = False
-        st.session_state.last_page = page
-        st.experimental_rerun()  # Force immediate rerender
+    # Always hide sidebar when a page is selected
+    st.session_state.show_sidebar = False
+    st.session_state.last_page = page
 
     # Apply CSS to hide sidebar if show_sidebar is False
     if not st.session_state.get("show_sidebar", True):
         st.markdown(
             """
             <style>
-                button[title='View fullscreen'] {display: none;}
-                div[data-testid='stSidebar'] {display: none !important;}
+                button[title='View fullscreen']{display: none;}
+                div[data-testid='stSidebar'] {display: none;}
             </style>
             """,
             unsafe_allow_html=True
