@@ -80,8 +80,9 @@ def dashboard_page(role, username):
                     fr_type = st.text_input("Enter New Feed Type", key="fr_custom_type")
                 else:
                     fr_type = st.selectbox("Feed Type", existing_feeds, key="fr_type")
-                fr_qty = st.number_input("Quantity (kg)", min_value=0.0, max_value=10000.0, key="fr_qty")
-                fr_cost = st.number_input("Total Cost (KES)", min_value=0.0, max_value=10000.0, key="fr_cost")
+                # Allow decimal input with step=None for both quantity and cost
+                fr_qty = st.number_input("Quantity (kg)", min_value=0.0, max_value=10000.0, step=None, format="%f", key="fr_qty")
+                fr_cost = st.number_input("Total Cost (KES)", min_value=0.0, max_value=10000.0, step=None, format="%f", key="fr_cost")
                 if st.button("Save Feed Received", key="save_fr_btn"):
                     if fr_qty <= 0 or fr_cost < 0:
                         st.warning("Quantity and cost must be > 0.")
