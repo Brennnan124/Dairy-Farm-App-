@@ -1,4 +1,3 @@
-# dairy_farm_app/page_modules/health.py
 import streamlit as st
 import pandas as pd
 from datetime import date
@@ -54,7 +53,7 @@ def staff_health_page():
         
         disease = st.text_input("Disease")
         medicine = st.text_input("Medicine Given")
-        medicine_price = st.number_input("Medicine Price (KES)", min_value=0.0, step=10.0)
+        medicine_price = st.number_input("Medicine Price (KES)", min_value=0, max_value=100000, step=1, format="%d", value=0)
         record_date = st.date_input("Date", value=date.today())
         vaccinations = st.text_input("Vaccinations (if calf)")
         observations = st.text_area("Observations")
