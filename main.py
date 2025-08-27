@@ -8,7 +8,7 @@ def main():
     if "show_sidebar" not in st.session_state:
         st.session_state.show_sidebar = True
     if "last_page" not in st.session_state:
-        st.session_state.last_page = "Dashboard"
+        st.session_state.last_page = None
 
     if not st.session_state.get("authenticated", False):
         with st.sidebar:
@@ -57,7 +57,7 @@ def main():
 
         page = st.sidebar.selectbox("Go to", nav_options, key="page_select")
 
-    # Automatically manage sidebar visibility
+    # Automatically hide sidebar for non-Dashboard pages
     if page != "Dashboard" and st.session_state.last_page != page:
         st.session_state.show_sidebar = False
         st.session_state.last_page = page
@@ -65,6 +65,7 @@ def main():
         st.session_state.show_sidebar = True
         st.session_state.last_page = page
 
+    # Apply CSS to hide sidebar if show_sidebar is False
     if not st.session_state.get("show_sidebar", True):
         st.markdown("<style>button[title='View fullscreen']{display: none;} div[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
 
