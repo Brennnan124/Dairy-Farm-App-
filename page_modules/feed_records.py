@@ -19,7 +19,7 @@ def feed_records_page(username):
         col1, col2 = st.columns(2)
         with col1:
             category = st.selectbox("Cow Category", ["Grown Cow", "Calf"], key="feed_category")
-            quantity = st.number_input("Quantity Used (kg)", min_value=0, max_value=10000, step=1, format="%d", value=0, key="feed_qty")
+            quantity = st.number_input("Quantity Used (kg)", min_value=0.0, max_value=100000.0, step=0.1, value=0.0, key="feed_qty")
         with col2:
             date_used = st.date_input("Date", value=date.today(), key="feed_date")
         
@@ -31,7 +31,7 @@ def feed_records_page(username):
                     "date": date_used.isoformat(),
                     "category": category,
                     "feed_type": feed_type,
-                    "quantity": quantity  # Store as integer
+                    "quantity": float(quantity)  # Store as float
                 })
                 st.success("Feed usage recorded!")
                 record_staff_performance(username, f"Feed usage recorded for {feed_type}")
