@@ -19,10 +19,10 @@ def milk_records_page(username):
     col1, col2 = st.columns(2)
     with col1:
         time_of_milking = st.selectbox("Time of Milking", ["Morning", "Lunch", "Evening"], key="milk_time")
-        litres_sell = st.number_input("Litres for Sale", min_value=0.0, max_value=100000.0, key="milk_sell")
+        litres_sell = st.number_input("Litres for Sale", min_value=0.0, max_value=10000.0, key="milk_sell")
         record_date = st.date_input("Date of Recording", value=date.today(), key="milk_date")
     with col2:
-        litres_calves = st.number_input("Litres for Calves", min_value=0.0, max_value=100000.0, key="milk_calves")
+        litres_calves = st.number_input("Litres for Calves", min_value=0.0, max_value=10000.0, key="milk_calves")
     
     if st.button("Record Milk"):
         if selected_cow == "No lactating cows available" or litres_sell < 0 or litres_calves < 0:
