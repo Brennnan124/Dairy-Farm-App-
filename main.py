@@ -57,14 +57,23 @@ def main():
 
         page = st.sidebar.selectbox("Go to", nav_options, key="page_select")
 
-    # Hide sidebar on any page selection
+    # Force sidebar to hide on any page change
     if st.session_state.last_page != page:
         st.session_state.show_sidebar = False
         st.session_state.last_page = page
+        st.experimental_rerun()  # Force immediate rerender
 
     # Apply CSS to hide sidebar if show_sidebar is False
     if not st.session_state.get("show_sidebar", True):
-        st.markdown("<style>button[title='View fullscreen']{display: none;} div[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
+        st.markdown(
+            """
+            <style>
+                button[title='View fullscreen'] {display: none;}
+                div[data-testid='stSidebar'] {display: none !important;}
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
 
     all_milk = to_date(load_table("milk_production"), "date")
     all_feeds_recv = to_date(load_table("feeds_received"), "date")
