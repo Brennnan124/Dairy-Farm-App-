@@ -7,6 +7,8 @@ def main():
     st.set_page_config(page_title="Dairy Farm Management", page_icon="🐄", layout="wide")
     if "show_sidebar" not in st.session_state:
         st.session_state.show_sidebar = True
+    if "last_page" not in st.session_state:
+        st.session_state.last_page = "Dashboard"
 
     if not st.session_state.get("authenticated", False):
         with st.sidebar:
@@ -53,13 +55,13 @@ def main():
             from page_modules.feed_records import feed_records_page
             nav_options = ["Dashboard", "Milk Production Records", "Feed Records", "Health", "Artificial Insemination", "Knowledge Base"]
 
-        page = st.sidebar.selectbox("Go to", nav_options)
+        page = st.sidebar.selectbox("Go to", nav_options, key="page_select")
 
-    # Automatically hide sidebar after page selection
-    if st.session_state.get("show_sidebar", True) and page != "Dashboard" and st.session_state.get("last_page") != page:
+    # Automatically manage sidebar visibility
+    if page != "Dashboard" and st.session_state.last_page != page:
         st.session_state.show_sidebar = False
         st.session_state.last_page = page
-    elif st.session_state.get("show_sidebar", False) and page == "Dashboard":
+    elif page == "Dashboard":
         st.session_state.show_sidebar = True
         st.session_state.last_page = page
 
