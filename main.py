@@ -5,7 +5,8 @@ from utils.data_loader import load_table, to_date
 
 def main():
     st.set_page_config(page_title="Dairy Farm Management", page_icon="🐄", layout="wide")
-    st.sidebar.empty()
+    if "show_sidebar" not in st.session_state:
+        st.session_state.show_sidebar = True
 
     if not st.session_state.get("authenticated", False):
         with st.sidebar:
@@ -29,30 +30,41 @@ def main():
         from auth import logout_button
         logout_button()
 
-    if role == "Manager":
-        from page_modules.dashboard import dashboard_page
-        from page_modules.health import manager_health_page
-        from page_modules.ai import manager_ai_page
-        from page_modules.reports import reports_page
-        from page_modules.audit_log import audit_log_page
-        from page_modules.staff_performance import staff_performance_page
-        from page_modules.employee_management import employee_management_page
-        from page_modules.password_management import password_management_page
-        from page_modules.data_edit import data_edit_page
-        nav_options = [
-            "Dashboard", "Health", "Artificial Insemination", "Reports",
-            "Audit Log", "Staff Performance", "Employee Management", "Password Management", "Edit Data"
-        ]
-    else:  # Staff
-        from page_modules.dashboard import dashboard_page
-        from page_modules.health import staff_health_page
-        from page_modules.ai import staff_ai_page
-        from page_modules.knowledge_base import knowledge_base_page
-        from page_modules.milk_records import milk_records_page
-        from page_modules.feed_records import feed_records_page
-        nav_options = ["Dashboard", "Milk Production Records", "Feed Records", "Health", "Artificial Insemination", "Knowledge Base"]
+        if role == "Manager":
+            from page_modules.dashboard import dashboard_page
+            from page_modules.health import manager_health_page
+            from page_modules.ai import manager_ai_page
+            from page_modules.reports import reports_page
+            from page_modules.audit_log import audit_log_page
+            from page_modules.staff_performance import staff_performance_page
+            from page_modules.employee_management import employee_management_page
+            from page_modules.password_management import password_management_page
+            from page_modules.data_edit import data_edit_page
+            nav_options = [
+                "Dashboard", "Health", "Artificial Insemination", "Reports",
+                "Audit Log", "Staff Performance", "Employee Management", "Password Management", "Edit Data"
+            ]
+        else:  # Staff
+            from page_modules.dashboard import dashboard_page
+            from page_modules.health import staff_health_page
+            from page_modules.ai import staff_ai_page
+            from page_modules.knowledge_base import knowledge_base_page
+            from page_modules.milk_records import milk_records_page
+            from page_modules.feed_records import feed_records_page
+            nav_options = ["Dashboard", "Milk Production Records", "Feed Records", "Health", "Artificial Insemination", "Knowledge Base"]
 
-    page = st.sidebar.selectbox("Go to", nav_options)
+        page = st.sidebar.selectbox("Go to", nav_options)
+
+    # Automatically hide sidebar after page selection
+    if st.session_state.get("show_sidebar", True) and page != "Dashboard" and st.session_state.get("last_page") != page:
+        st.session_state.show_sidebar = False
+        st.session_state.last_page = page
+    elif st.session_state.get("show_sidebar", False) and page == "Dashboard":
+        st.session_state.show_sidebar = True
+        st.session_state.last_page = page
+
+    if not st.session_state.get("show_sidebar", True):
+        st.markdown("<style>button[title='View fullscreen']{display: none;} div[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
 
     all_milk = to_date(load_table("milk_production"), "date")
     all_feeds_recv = to_date(load_table("feeds_received"), "date")
@@ -95,7 +107,7 @@ def main():
         if role == "Manager":
             manager_ai_page()
         else:
-          staff_ai_page()
+            staff_ai_page()
     elif page == "Knowledge Base":
         knowledge_base_page()
     elif page == "Milk Production Records" and role == "Staff":
