@@ -6,6 +6,7 @@ from utils.data_loader import load_table, to_date
 def main():
     st.set_page_config(page_title="Dairy Farm Management", page_icon="🐄", layout="wide")
     st.sidebar.empty()
+    st.write("Debug: App starting...")
 
     if not st.session_state.get("authenticated", False):
         with st.sidebar:
@@ -23,6 +24,7 @@ def main():
     st.session_state.last_activity = time.time()
     username = st.session_state.get("username")
     role = st.session_state.get("role")
+    st.write("Debug: Authentication successful, role:", role)
     with st.sidebar:
         st.title(f"Welcome {role}")
         st.title("Navigation")
@@ -53,12 +55,14 @@ def main():
         nav_options = ["Dashboard", "Milk Production Records", "Feed Records", "Health", "Artificial Insemination", "Knowledge Base"]
 
     page = st.sidebar.selectbox("Go to", nav_options)
+    st.write("Debug: Page selected:", page)
 
     all_milk = to_date(load_table("milk_production"), "date")
     all_feeds_recv = to_date(load_table("feeds_received"), "date")
     all_feeds_used = to_date(load_table("feeds_used"), "date")
     all_cows = load_table("cows")
     all_obs = to_date(load_table("observations"), "date")
+    st.write("Debug: Data loaded")
 
     min_date = min([d for d in [all_milk["date"].min() if not all_milk.empty else None,
                                 all_feeds_recv["date"].min() if not all_feeds_recv.empty else None,
@@ -114,6 +118,7 @@ def main():
         password_management_page()
     elif page == "Edit Data" and role == "Manager":
         data_edit_page(username)
+    st.write("Debug: Page rendered")
 
 if __name__ == "__main__":
     main()
