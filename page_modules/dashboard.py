@@ -80,8 +80,8 @@ def dashboard_page(role, username):
                     fr_type = st.text_input("Enter New Feed Type", key="fr_custom_type")
                 else:
                     fr_type = st.selectbox("Feed Type", existing_feeds, key="fr_type")
-                fr_qty = st.number_input("Quantity (kg)", min_value=0, max_value=100000, step=1, format="%d", value=0)
-                fr_cost = st.number_input("Total Cost (KES)", min_value=0, max_value=10000000, step=1, format="%d", value=0)
+                fr_qty = st.number_input("Quantity (kg)", min_value=0.0, max_value=100000.0, step=0.1, value=0.0, key="fr_qty")
+                fr_cost = st.number_input("Total Cost (KES)", min_value=0, max_value=10000000, step=1, value=0, key="fr_cost")
                 if st.button("Save Feed Received", key="save_fr_btn"):
                     if fr_qty <= 0 or fr_cost < 0:
                         st.warning("Quantity must be > 0 and cost cannot be negative.")
@@ -91,8 +91,8 @@ def dashboard_page(role, username):
                         add_document("feeds_received", {
                             "date": date.today().isoformat(),
                             "feed_type": fr_type.strip(),
-                            "quantity": fr_qty,  # Removed float() to store as integer
-                            "cost": fr_cost      # Removed float() to store as integer
+                            "quantity": float(fr_qty),  # Store as float
+                            "cost": fr_cost             # Keep as integer for cost
                         })
                         st.success("Feed receipt recorded.")
                         log_audit_event(username, "FEED_RECEIVED", f"{fr_qty}kg of {fr_type} for KES {fr_cost}")
@@ -103,7 +103,7 @@ def dashboard_page(role, username):
             inventory = get_feed_inventory()
             if inventory.empty:
                 st.info("No feed inventory data available. Ensure feeds are recorded in 'Feeds Received' and 'Feeds Used'.")
-                st.write("Debug: feeds_received or feeds_used is empty")  # Moved debug here
+                st.write("Debug: feeds_received or feeds_used is empty")
             else:
                 def style_black(row):
                     return ['color: white; background-color: black'] * len(row)
@@ -128,8 +128,8 @@ def dashboard_page(role, username):
             df = load_table("feeds_received")
             if not df.empty:
                 df = to_date(df, "date")
-                df_display = df[["date", "feed_type", "quantity", "cost"]].copy()  # Only these columns
-                df_display["quantity"] = df_display["quantity"].apply(lambda x: f"{x:,.0f} kg")
+                df_display = df[["date", "feed_type", "quantity", "cost"]].copy()
+                df_display["quantity"] = df_display["quantity"].apply(lambda x: f"{x:,.1f} kg" if isinstance(x, (int, float)) else x)
                 df_display["cost"] = df_display["cost"].apply(money)
                 show_table(df_display, "Feeds Received", page_size=15, key_prefix="fr_tbl")
             else:
@@ -140,7 +140,7 @@ def dashboard_page(role, username):
             if not df.empty:
                 df = to_date(df, "date")
                 df_fmt = df.copy()
-                df_fmt["quantity"] = df_fmt["quantity"].apply(lambda x: f"{x:,.0f} kg")
+                df_fmt["quantity"] = df_fmt["quantity"].apply(lambda x: f"{x:,.1f} kg" if isinstance(x, (int, float)) else x)
                 show_table(df_fmt, "Feeds Used", search_cols=["category", "feed_type"], page_size=15, key_prefix="fu_tbl")
             else:
                 st.info("No feed usage records yet.")
@@ -150,9 +150,9 @@ def dashboard_page(role, username):
             if not df.empty:
                 df = to_date(df, "date")
                 df_fmt = df.copy()
-                df_fmt["litres_sell"] = df_fmt["litres_sell"].apply(liters)
-                df_fmt["litres_calves"] = df_fmt["litres_calves"].apply(liters)
-                df_display = df_fmt.drop(columns=["id"])  # Remove id
+                df_fmt["litres_sell"] = df_fmt["litres_sell"].apply(lambda x: f"{x:,.1f} L" if isinstance(x, (int, float)) else x)
+                df_fmt["litres_calves"] = df_fmt["litres_calves"].apply(lambda x: f"{x:,.1f} L" if isinstance(x, (int, float)) else x)
+                df_display = df_fmt.drop(columns=["id"])
                 show_table(df_display, "Milk Production", search_cols=["cow", "time_of_milking"], page_size=20, key_prefix="milk_tbl")
             else:
                 st.info("No milk records yet.")
@@ -161,7 +161,7 @@ def dashboard_page(role, username):
             df = load_table("observations")
             if not df.empty:
                 df = to_date(df, "date")
-                df_display = df.drop(columns=["id"])  # Remove id
+                df_display = df.drop(columns=["id"])
                 show_table(df_display, "Observations", search_cols=["note"], page_size=10, key_prefix="obs_tbl")
             else:
                 st.info("No observations yet.")
