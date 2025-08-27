@@ -20,6 +20,7 @@ def milk_records_page(username):
     with col1:
         time_of_milking = st.selectbox("Time of Milking", ["Morning", "Lunch", "Evening"], key="milk_time")
         litres_sell = st.number_input("Litres for Sale", min_value=0, max_value=10000, step=1, format="%d", value=0, key="milk_sell")
+        record_date = st.date_input("Date of Recording", value=date.today(), key="milk_date")
     with col2:
         litres_calves = st.number_input("Litres for Calves", min_value=0, max_value=10000, step=1, format="%d", value=0, key="milk_calves")
     
@@ -29,7 +30,7 @@ def milk_records_page(username):
         else:
             add_document("milk_production", {
                 "cow": selected_cow,
-                "date": date.today().isoformat(),
+                "date": record_date.isoformat(),  # Use the selected or default date
                 "time_of_milking": time_of_milking,
                 "litres_sell": litres_sell,  # Store as integer
                 "litres_calves": litres_calves  # Store as integer
