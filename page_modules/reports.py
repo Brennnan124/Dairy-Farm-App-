@@ -5,7 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from io import BytesIO
 from utils.data_loader import load_table, to_date
-from utils.calculations import calculate_profit_per_cow
+from utils.calculations import calculate_profit_per_cow, calculate_feed_cost_used
 from utils.helpers import format_with_commas
 
 try:
@@ -57,12 +57,19 @@ def reports_page(start_date, end_date, granularity):
     price_per_litre = 43
     milk_daily = pd.DataFrame()
     if not milk.empty:
-        milk_daily = (milk.groupby("date")["litres_sell"].sum().to_frame("milk_l"))
+        # Use total_litres if available, otherwise use litres_sell
+        if "total_litres" in milk.columns:
+            milk_daily = (milk.groupby("date")["total_litres"].sum().to_frame("milk_l"))
+        else:
+            milk_daily = (milk.groupby("date")["litres_sell"].sum().to_frame("milk_l"))
         milk_daily["revenue"] = milk_daily["milk_l"] * price_per_litre
 
-    cost_daily = pd.DataFrame()
-    if not fr.empty:
-        cost_daily = fr.groupby("date")["cost"].sum().to_frame("feed_cost")
+    # Calculate feed cost used instead of feed received
+    feed_cost_used = calculate_feed_cost_used(start_date, end_date)
+    if not feed_cost_used.empty:
+        cost_daily = feed_cost_used.groupby("date")["cost"].sum().to_frame("feed_cost")
+    else:
+        cost_daily = pd.DataFrame(columns=["feed_cost"])
 
     health_costs = pd.DataFrame()
     if not health.empty and 'cost' in health.columns:
@@ -163,10 +170,14 @@ def reports_page(start_date, end_date, granularity):
     
     with tab2:
         if not milk.empty:
-            milk_by_period = milk.groupby("date")["litres_sell"].sum().reset_index()
-            fig_milk = px.line(milk_by_period, x="date", y="litres_sell", 
+            # Use total_litres if available, otherwise use litres_sell
+            if "total_litres" in milk.columns:
+                milk_by_period = milk.groupby("date")["total_litres"].sum().reset_index()
+            else:
+                milk_by_period = milk.groupby("date")["litres_sell"].sum().reset_index()
+            fig_milk = px.line(milk_by_period, x="date", y="total_litres" if "total_litres" in milk.columns else "litres_sell", 
                               title="Milk Production Over Time",
-                              labels={"litres_sell": "Liters", "date": "Date"})
+                              labels={"total_litres" if "total_litres" in milk.columns else "litres_sell": "Liters", "date": "Date"})
             st.plotly_chart(fig_milk, use_container_width=True)
         else:
             st.info("No milk production data available")
