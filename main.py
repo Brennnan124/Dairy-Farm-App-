@@ -57,12 +57,9 @@ def main():
 
         page = st.sidebar.selectbox("Go to", nav_options, key="page_select")
 
-    # Automatically hide sidebar for non-Dashboard pages
-    if page != "Dashboard" and st.session_state.last_page != page:
+    # Hide sidebar on any page selection
+    if st.session_state.last_page != page:
         st.session_state.show_sidebar = False
-        st.session_state.last_page = page
-    elif page == "Dashboard":
-        st.session_state.show_sidebar = True
         st.session_state.last_page = page
 
     # Apply CSS to hide sidebar if show_sidebar is False
@@ -82,7 +79,7 @@ def main():
     max_date = max([d for d in [all_milk["date"].max() if not all_milk.empty else None,
                                 all_feeds_recv["date"].max() if not all_feeds_recv.empty else None,
                                 all_feeds_used["date"].max() if not all_feeds_used.empty else None,
-                                all_obs["date"].max() if not all_obs.empty else None] if d is not None], default=date.today())
+                                all_obs["date"].max() if not all_obs.empty else None] if d is not none], default=date.today())
 
     if role == "Manager" and page == "Reports":
         with st.sidebar:
