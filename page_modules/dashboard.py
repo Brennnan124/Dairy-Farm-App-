@@ -80,7 +80,7 @@ def dashboard_page(role, username):
                     fr_type = st.text_input("Enter New Feed Type", key="fr_custom_type")
                 else:
                     fr_type = st.selectbox("Feed Type", existing_feeds, key="fr_type")
-                fr_qty = st.number_input("Quantity (kg)", min_value=0.0, max_value=100000.0, step=0.1, value=0.0, key="fr_qty")
+                fr_qty = st.number_input("Quantity (kg)", min_value=0.0, max_value=100000.0, key="fr_qty")
                 fr_cost = st.number_input("Total Cost (KES)", min_value=0, max_value=10000000, step=1, value=0, key="fr_cost")
                 if st.button("Save Feed Received", key="save_fr_btn"):
                     if fr_qty <= 0 or fr_cost < 0:
