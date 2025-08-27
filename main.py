@@ -79,7 +79,7 @@ def main():
     max_date = max([d for d in [all_milk["date"].max() if not all_milk.empty else None,
                                 all_feeds_recv["date"].max() if not all_feeds_recv.empty else None,
                                 all_feeds_used["date"].max() if not all_feeds_used.empty else None,
-                                all_obs["date"].max() if not all_obs.empty else None] if d is not none], default=date.today())
+                                all_obs["date"].max() if not all_obs.empty else None] if d is not None], default=date.today())
 
     if role == "Manager" and page == "Reports":
         with st.sidebar:
