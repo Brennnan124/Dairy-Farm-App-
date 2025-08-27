@@ -1,4 +1,3 @@
-# dairy_farm_app/pages/reports.py
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
@@ -34,6 +33,7 @@ def reports_page(start_date, end_date, granularity):
     fu = to_date(load_table("feeds_used"), "date")
     health = to_date(load_table("health_records"), "date")
     ai = to_date(load_table("ai_records"), "ai_date")
+    employees = load_table("employees")  # Load all employees
     
     if not milk.empty:
         milk = milk[(milk["date"] >= start_date) & (milk["date"] <= end_date)]
@@ -45,6 +45,14 @@ def reports_page(start_date, end_date, granularity):
         health = health[(health["date"] >= start_date) & (health["date"] <= end_date)]
     if not ai.empty:
         ai = ai[(ai["ai_date"] >= start_date) & (ai["ai_date"] <= end_date)]
+    if not employees.empty:
+        employees["start_date"] = pd.to_datetime(employees["start_date"], errors='coerce')
+        employees["end_date"] = pd.to_datetime(employees["end_date"], errors='coerce')
+        # Filter employees active during the period
+        employees = employees[
+            (employees["start_date"] <= end_date) & 
+            ((employees["end_date"].isna()) | (employees["end_date"] > start_date))
+        ]
 
     price_per_litre = 43
     milk_daily = pd.DataFrame()
@@ -64,6 +72,19 @@ def reports_page(start_date, end_date, granularity):
     if not ai.empty and 'cost' in ai.columns:
         ai_costs = ai.groupby("ai_date")["cost"].sum().to_frame("ai_cost")
 
+    salary_costs = pd.DataFrame()
+    if not employees.empty and 'salary' in employees.columns:
+        # Prorate salary based on days worked in the period
+        daily = pd.DataFrame(index=pd.date_range(start=start_date, end=end_date, freq="D"))
+        for _, emp in employees.iterrows():
+            start = max(emp["start_date"], start_date)
+            end = min(emp["end_date"] if pd.notna(emp["end_date"]) else end_date, end_date)
+            days_worked = (end - start).days + 1 if start <= end else 0
+            if days_worked > 0:
+                daily_salary = emp["salary"] / 30 * (days_worked / (end_date - start_date).days)
+                daily["salary_cost"] = daily_salary
+        salary_costs = daily.groupby(daily.index)["salary_cost"].sum().to_frame("salary_cost")
+
     daily = pd.DataFrame(index=pd.date_range(start=start_date, end=end_date, freq="D"))
     daily.index.name = "date"
     if not milk_daily.empty:
@@ -74,16 +95,18 @@ def reports_page(start_date, end_date, granularity):
         daily = daily.join(health_costs, how="left")
     if not ai_costs.empty:
         daily = daily.join(ai_costs, how="left")
+    if not salary_costs.empty:
+        daily = daily.join(salary_costs, how="left")
 
     pd.set_option('future.no_silent_downcasting', True)
-    numeric_cols = ['milk_l', 'revenue', 'feed_cost', 'health_cost', 'ai_cost', 'total_cost', 'profit']
+    numeric_cols = ['milk_l', 'revenue', 'feed_cost', 'health_cost', 'ai_cost', 'salary_cost', 'total_cost', 'profit']
     for col in numeric_cols:
         if col not in daily.columns:
             daily[col] = 0.0
         else:
             daily[col] = pd.to_numeric(daily[col], errors='coerce')
     daily = daily.infer_objects(copy=False).fillna(0.0).reset_index()
-    daily["total_cost"] = daily["feed_cost"] + daily["health_cost"] + daily["ai_cost"]
+    daily["total_cost"] = daily["feed_cost"] + daily["health_cost"] + daily["ai_cost"] + daily["salary_cost"]
     daily["profit"] = daily["revenue"] - daily["total_cost"]
 
     def aggregate(df_daily, rule):
@@ -95,31 +118,33 @@ def reports_page(start_date, end_date, granularity):
     agg_map = {"Daily": ("D", daily), "Weekly": ("W", aggregate(daily, "W")), "Monthly": ("ME", aggregate(daily, "ME"))}
     rule_code, df_agg = agg_map[granularity]
     
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     total_revenue = df_agg["revenue"].sum()
     total_feed_cost = df_agg["feed_cost"].sum()
     total_health_cost = df_agg["health_cost"].sum()
     total_ai_cost = df_agg["ai_cost"].sum()
+    total_salary_cost = df_agg["salary_cost"].sum()
     total_profit = df_agg["profit"].sum()
     
     col1.metric("Total Revenue", f"KES {format_with_commas(total_revenue)}")
     col2.metric("Total Feed Cost", f"KES {format_with_commas(total_feed_cost)}")
     col3.metric("Total Health Cost", f"KES {format_with_commas(total_health_cost)}")
     col4.metric("Total AI Cost", f"KES {format_with_commas(total_ai_cost)}")
+    col5.metric("Total Salary Cost", f"KES {format_with_commas(total_salary_cost)}")
     
     st.markdown("---")
     
-    col5, col6, col7 = st.columns(3)
-    col5.metric("Total Profit/Loss", f"KES {format_with_commas(total_profit)}", 
+    col6, col7, col8 = st.columns(3)
+    col6.metric("Total Profit/Loss", f"KES {format_with_commas(total_profit)}", 
                delta_color="inverse" if total_profit < 0 else "normal")
     
     if total_feed_cost > 0:
         feed_efficiency = total_revenue / total_feed_cost
-        col6.metric("Feed Efficiency Ratio", f"{feed_efficiency:.2f}")
+        col7.metric("Feed Efficiency Ratio", f"{feed_efficiency:.2f}")
     
     if total_revenue > 0:
         profit_margin = (total_profit / total_revenue) * 100
-        col7.metric("Profit Margin", f"{profit_margin:.1f}%")
+        col8.metric("Profit Margin", f"{profit_margin:.1f}%")
     
     st.markdown("---")
     
@@ -160,7 +185,8 @@ def reports_page(start_date, end_date, granularity):
     cost_categories = {
         "Feed": total_feed_cost,
         "Health": total_health_cost,
-        "AI": total_ai_cost
+        "AI": total_ai_cost,
+        "Salaries": total_salary_cost
     }
     
     cost_df = pd.DataFrame({
@@ -255,7 +281,8 @@ def generate_pdf_report(df_agg, profit_per_cow, start_date, end_date):
             f"Total Revenue: KES {format_with_commas(df_agg['revenue'].sum())}",
             f"Total Costs: KES {format_with_commas(df_agg['total_cost'].sum())}",
             f"Total Profit: KES {format_with_commas(df_agg['profit'].sum())}",
-            f"Feed Efficiency: {df_agg['revenue'].sum()/df_agg['feed_cost'].sum():.2f}" if df_agg['feed_cost'].sum() > 0 else "Feed Efficiency: N/A"
+            f"Feed Efficiency: {df_agg['revenue'].sum()/df_agg['feed_cost'].sum():.2f}" if df_agg['feed_cost'].sum() > 0 else "Feed Efficiency: N/A",
+            f"Total Salary Cost: KES {format_with_commas(df_agg['salary_cost'].sum())}"
         ]
         
         for metric in metrics:
