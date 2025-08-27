@@ -57,26 +57,21 @@ def main():
 
         page = st.sidebar.selectbox("Go to", nav_options, key="page_select")
 
-    # Always hide sidebar
+    # Always hide sidebar when a page is selected
     st.session_state.show_sidebar = False
     st.session_state.last_page = page
 
-    # Inject JavaScript to hide sidebar
-    st.markdown(
-        """
-        <script>
-            const sidebar = document.querySelector('div[data-testid="stSidebar"]');
-            if (sidebar) {
-                sidebar.style.display = 'none';
-            }
-            const fullscreenButton = document.querySelector('button[title="View fullscreen"]');
-            if (fullscreenButton) {
-                fullscreenButton.style.display = 'none';
-            }
-        </script>
-        """,
-        unsafe_allow_html=True
-    )
+    # Apply CSS to hide sidebar if show_sidebar is False
+    if not st.session_state.get("show_sidebar", True):
+        st.markdown(
+            """
+            <style>
+                button[title='View fullscreen']{display: none;}
+                div[data-testid='stSidebar'] {display: none;}
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
 
     all_milk = to_date(load_table("milk_production"), "date")
     all_feeds_recv = to_date(load_table("feeds_received"), "date")
