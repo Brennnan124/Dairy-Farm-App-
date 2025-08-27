@@ -1,4 +1,3 @@
-# dairy_farm_app/page_modules/milk_records.py
 import streamlit as st
 from firebase_utils import add_document, log_audit_event
 from utils.calculations import get_all_cows, get_cows_by_status
@@ -20,9 +19,10 @@ def milk_records_page(username):
     col1, col2 = st.columns(2)
     with col1:
         time_of_milking = st.selectbox("Time of Milking", ["Morning", "Lunch", "Evening"], key="milk_time")
-        litres_sell = st.number_input("Litres for Sale", min_value=0.0, step=0.1, key="milk_sell")
+        litres_sell = st.number_input("Litres for Sale", min_value=0, max_value=10000, step=1, format="%d", value=0, key="milk_sell")
+        record_date = st.date_input("Date of Recording", value=date.today(), key="milk_date")
     with col2:
-        litres_calves = st.number_input("Litres for Calves", min_value=0.0, step=0.1, key="milk_calves")
+        litres_calves = st.number_input("Litres for Calves", min_value=0, max_value=10000, step=1, format="%d", value=0, key="milk_calves")
     
     if st.button("Record Milk"):
         if selected_cow == "No lactating cows available" or litres_sell < 0 or litres_calves < 0:
@@ -30,10 +30,10 @@ def milk_records_page(username):
         else:
             add_document("milk_production", {
                 "cow": selected_cow,
-                "date": date.today().isoformat(),
+                "date": record_date.isoformat(),  # Use the selected or default date
                 "time_of_milking": time_of_milking,
-                "litres_sell": float(litres_sell),
-                "litres_calves": float(litres_calves)
+                "litres_sell": litres_sell,  # Store as integer
+                "litres_calves": litres_calves  # Store as integer
             })
             st.success("Milk production recorded!")
             record_staff_performance(username, f"Milk recorded for {selected_cow}")
