@@ -1,3 +1,4 @@
+# dairy_farm_app/page_modules/dashboard.py
 import streamlit as st
 import pandas as pd
 from datetime import date
@@ -80,8 +81,8 @@ def dashboard_page(role, username):
                     fr_type = st.text_input("Enter New Feed Type", key="fr_custom_type")
                 else:
                     fr_type = st.selectbox("Feed Type", existing_feeds, key="fr_type")
-                fr_qty = st.number_input("Quantity (kg)", min_value=0, max_value=100000, step=1, format="%d", value=0)
-                fr_cost = st.number_input("Total Cost (KES)", min_value=0, max_value=10000000, step=1, format="%d", value=0)
+                fr_qty = st.number_input("Quantity (kg)", min_value=0.0, max_value=100000.0, step=1.0, key="fr_qty")
+                fr_cost = st.number_input("Total Cost (KES)", min_value=0.0, max_value=10_000_000.0, step=100.0, key="fr_cost")
                 if st.button("Save Feed Received", key="save_fr_btn"):
                     if fr_qty <= 0 or fr_cost < 0:
                         st.warning("Quantity must be > 0 and cost cannot be negative.")
@@ -91,8 +92,8 @@ def dashboard_page(role, username):
                         add_document("feeds_received", {
                             "date": date.today().isoformat(),
                             "feed_type": fr_type.strip(),
-                            "quantity": fr_qty,  # Removed float() to store as integer
-                            "cost": fr_cost      # Removed float() to store as integer
+                            "quantity": float(fr_qty),
+                            "cost": float(fr_cost)
                         })
                         st.success("Feed receipt recorded.")
                         log_audit_event(username, "FEED_RECEIVED", f"{fr_qty}kg of {fr_type} for KES {fr_cost}")
