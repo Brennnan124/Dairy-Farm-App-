@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
+from datetime import date, timedelta
 from utils.data_loader import load_table, to_date
 from utils.helpers import show_table, money, liters
 from utils.calculations import get_feed_inventory, get_available_feed_types, get_all_cows
@@ -10,7 +10,8 @@ from page_modules.staff_performance import record_staff_performance
 def dashboard_page(role, username):
     st.title("🐄 Dairy Farm Management System")
     
-    all_milk = to_date(load_table("milk_production"), "date")
+    all_milk_totals = to_date(load_table("milk_totals"), "date")  # Total production for profit calculation
+    all_milk = to_date(load_table("milk_production"), "date")     # Individual cow records
     all_cows = load_table("cows")
     
     if role == "Staff":
@@ -51,6 +52,43 @@ def dashboard_page(role, username):
 
     if role == "Manager":
         st.header("Manager Dashboard")
+        
+        # Milk production metrics at the top (using milk_totals for profit calculation)
+        st.subheader("Milk Production Summary")
+        col_metrics1, col_metrics2, col_metrics3 = st.columns(3)
+        
+        with col_metrics1:
+            # Today's milk
+            today = date.today()
+            if not all_milk_totals.empty:
+                today_total = all_milk_totals[all_milk_totals["date"] == today]["total_litres"].sum()
+            else:
+                today_total = 0
+            col_metrics1.metric("Today's Production", f"{today_total:.1f} L")
+        
+        with col_metrics2:
+            # This week's milk
+            week_start = today - timedelta(days=today.weekday())
+            if not all_milk_totals.empty:
+                week_total = all_milk_totals[
+                    (all_milk_totals["date"] >= week_start) & 
+                    (all_milk_totals["date"] <= today)
+                ]["total_litres"].sum()
+            else:
+                week_total = 0
+            col_metrics2.metric("This Week's Production", f"{week_total:.1f} L")
+        
+        with col_metrics3:
+            # This month's milk
+            month_start = date(today.year, today.month, 1)
+            if not all_milk_totals.empty:
+                month_total = all_milk_totals[
+                    (all_milk_totals["date"] >= month_start) & 
+                    (all_milk_totals["date"] <= today)
+                ]["total_litres"].sum()
+            else:
+                month_total = 0
+            col_metrics3.metric("This Month's Production", f"{month_total:.1f} L")
 
         colA, colB = st.columns(2)
         with colA:
@@ -147,16 +185,31 @@ def dashboard_page(role, username):
                 st.info("No feed usage records yet.")
 
         with st.expander("🥛 Milk Production", expanded=False):
-            df = load_table("milk_production")
-            if not df.empty:
-                df = to_date(df, "date")
-                df_fmt = df.copy()
-                df_fmt["litres_sell"] = df_fmt["litres_sell"].apply(lambda x: f"{x:,.1f} L" if isinstance(x, (int, float)) else x)
-                df_fmt["litres_calves"] = df_fmt["litres_calves"].apply(lambda x: f"{x:,.1f} L" if isinstance(x, (int, float)) else x)
-                df_display = df_fmt.drop(columns=["id"])
-                show_table(df_display, "Milk Production", search_cols=["cow", "time_of_milking"], page_size=20, key_prefix="milk_tbl")
-            else:
-                st.info("No milk records yet.")
+            # Show both individual records and total production
+            tab1, tab2 = st.tabs(["Individual Records", "Total Production"])
+            
+            with tab1:
+                df = load_table("milk_production")
+                if not df.empty:
+                    df = to_date(df, "date")
+                    df_fmt = df.copy()
+                    df_fmt["litres_sell"] = df_fmt["litres_sell"].apply(lambda x: f"{x:,.1f} L" if isinstance(x, (int, float)) else x)
+                    df_fmt["litres_calves"] = df_fmt["litres_calves"].apply(lambda x: f"{x:,.1f} L" if isinstance(x, (int, float)) else x)
+                    df_display = df_fmt.drop(columns=["id"])
+                    show_table(df_display, "Milk Production (Individual)", search_cols=["cow", "time_of_milking"], page_size=20, key_prefix="milk_tbl")
+                else:
+                    st.info("No milk records yet.")
+            
+            with tab2:
+                df = load_table("milk_totals")
+                if not df.empty:
+                    df = to_date(df, "date")
+                    df_fmt = df.copy()
+                    df_fmt["total_litres"] = df_fmt["total_litres"].apply(lambda x: f"{x:,.1f} L" if isinstance(x, (int, float)) else x)
+                    df_display = df_fmt.drop(columns=["id"])
+                    show_table(df_display, "Milk Production (Total)", search_cols=[], page_size=20, key_prefix="milk_total_tbl")
+                else:
+                    st.info("No total production records yet.")
 
         with st.expander("📝 Observations", expanded=False):
             df = load_table("observations")
