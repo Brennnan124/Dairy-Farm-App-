@@ -5,7 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from io import BytesIO
 from utils.data_loader import load_table, to_date
-from utils.calculations import calculate_profit_per_cow
+from utils.calculations import calculate_profit_per_cow, calculate_feed_cost_used
 from utils.helpers import format_with_commas
 
 try:
@@ -28,13 +28,18 @@ def reports_page(start_date, end_date, granularity):
     
     st.write(f"**Report Period:** {date_range_str}")
     
-    milk = to_date(load_table("milk_production"), "date")
-    fr = to_date(load_table("feeds_received"), "date")
-    fu = to_date(load_table("feeds_used"), "date")
-    health = to_date(load_table("health_records"), "date")
-    ai = to_date(load_table("ai_records"), "ai_date")
-    employees = load_table("employees")  # Load all employees
+    # Load all relevant data
+    milk_totals = to_date(load_table("milk_totals"), "date")  # Total production for profit calculation
+    milk = to_date(load_table("milk_production"), "date")     # Individual cow records
+    fr = to_date(load_table("feeds_received"), "date")        # Feeds received
+    fu = to_date(load_table("feeds_used"), "date")            # Feeds used
+    health = to_date(load_table("health_records"), "date")    # Health records
+    ai = to_date(load_table("ai_records"), "ai_date")         # AI records
+    employees = load_table("employees")                       # Employees
     
+    # Filter data by date range
+    if not milk_totals.empty:
+        milk_totals = milk_totals[(milk_totals["date"] >= start_date) & (milk_totals["date"] <= end_date)]
     if not milk.empty:
         milk = milk[(milk["date"] >= start_date) & (milk["date"] <= end_date)]
     if not fr.empty:
@@ -48,21 +53,38 @@ def reports_page(start_date, end_date, granularity):
     if not employees.empty:
         employees["start_date"] = pd.to_datetime(employees["start_date"], errors='coerce')
         employees["end_date"] = pd.to_datetime(employees["end_date"], errors='coerce')
-        # Filter employees active during the period
-        employees = employees[
-            (employees["start_date"] <= end_date) & 
-            ((employees["end_date"].isna()) | (employees["end_date"] > start_date))
-        ]
+        
+        # Calculate monthly salaries (paid on 1st of each month)
+        salary_costs = calculate_monthly_salaries(employees, start_date, end_date)
+    else:
+        salary_costs = pd.DataFrame(columns=["salary_cost"])
 
     price_per_litre = 43
     milk_daily = pd.DataFrame()
-    if not milk.empty:
+    
+    # Use milk_totals for profit calculation (as requested)
+    if not milk_totals.empty:
+        milk_daily = (milk_totals.groupby("date")["total_litres"].sum().to_frame("milk_l"))
+        milk_daily["revenue"] = milk_daily["milk_l"] * price_per_litre
+    elif not milk.empty:
+        # Fallback to individual records if totals not available
         milk_daily = (milk.groupby("date")["litres_sell"].sum().to_frame("milk_l"))
         milk_daily["revenue"] = milk_daily["milk_l"] * price_per_litre
 
-    cost_daily = pd.DataFrame()
+    # Calculate feed cost used (based on actual consumption, not purchases)
+    feed_cost_used = calculate_feed_cost_used(start_date, end_date)
+    if not feed_cost_used.empty:
+        cost_daily = feed_cost_used.groupby("date")["cost"].sum().to_frame("feed_cost")
+    else:
+        cost_daily = pd.DataFrame(columns=["feed_cost"])
+
+    # Calculate total feed purchased in KES (not kg)
     if not fr.empty:
-        cost_daily = fr.groupby("date")["cost"].sum().to_frame("feed_cost")
+        feed_purchased_daily = fr.groupby("date")["cost"].sum().to_frame("feed_purchased_cost")
+        total_feed_purchased = fr["cost"].sum()
+    else:
+        feed_purchased_daily = pd.DataFrame(columns=["feed_purchased_cost"])
+        total_feed_purchased = 0
 
     health_costs = pd.DataFrame()
     if not health.empty and 'cost' in health.columns:
@@ -72,25 +94,14 @@ def reports_page(start_date, end_date, granularity):
     if not ai.empty and 'cost' in ai.columns:
         ai_costs = ai.groupby("ai_date")["cost"].sum().to_frame("ai_cost")
 
-    salary_costs = pd.DataFrame()
-    if not employees.empty and 'salary' in employees.columns:
-        # Prorate salary based on days worked in the period
-        daily = pd.DataFrame(index=pd.date_range(start=start_date, end=end_date, freq="D"))
-        for _, emp in employees.iterrows():
-            start = max(emp["start_date"], start_date)
-            end = min(emp["end_date"] if pd.notna(emp["end_date"]) else end_date, end_date)
-            days_worked = (end - start).days + 1 if start <= end else 0
-            if days_worked > 0:
-                daily_salary = emp["salary"] / 30 * (days_worked / (end_date - start_date).days)
-                daily["salary_cost"] = daily_salary
-        salary_costs = daily.groupby(daily.index)["salary_cost"].sum().to_frame("salary_cost")
-
     daily = pd.DataFrame(index=pd.date_range(start=start_date, end=end_date, freq="D"))
     daily.index.name = "date"
     if not milk_daily.empty:
         daily = daily.join(milk_daily, how="left")
     if not cost_daily.empty:
         daily = daily.join(cost_daily, how="left")
+    if not feed_purchased_daily.empty:
+        daily = daily.join(feed_purchased_daily, how="left")
     if not health_costs.empty:
         daily = daily.join(health_costs, how="left")
     if not ai_costs.empty:
@@ -99,7 +110,7 @@ def reports_page(start_date, end_date, granularity):
         daily = daily.join(salary_costs, how="left")
 
     pd.set_option('future.no_silent_downcasting', True)
-    numeric_cols = ['milk_l', 'revenue', 'feed_cost', 'health_cost', 'ai_cost', 'salary_cost', 'total_cost', 'profit']
+    numeric_cols = ['milk_l', 'revenue', 'feed_cost', 'feed_purchased_cost', 'health_cost', 'ai_cost', 'salary_cost', 'total_cost', 'profit']
     for col in numeric_cols:
         if col not in daily.columns:
             daily[col] = 0.0
@@ -118,14 +129,18 @@ def reports_page(start_date, end_date, granularity):
     agg_map = {"Daily": ("D", daily), "Weekly": ("W", aggregate(daily, "W")), "Monthly": ("ME", aggregate(daily, "ME"))}
     rule_code, df_agg = agg_map[granularity]
     
-    col1, col2, col3, col4, col5 = st.columns(5)
+    # Calculate totals
     total_revenue = df_agg["revenue"].sum()
     total_feed_cost = df_agg["feed_cost"].sum()
+    total_feed_purchased = df_agg["feed_purchased_cost"].sum() if "feed_purchased_cost" in df_agg.columns else 0
     total_health_cost = df_agg["health_cost"].sum()
     total_ai_cost = df_agg["ai_cost"].sum()
     total_salary_cost = df_agg["salary_cost"].sum()
+    total_cost = df_agg["total_cost"].sum()
     total_profit = df_agg["profit"].sum()
     
+    # Display metrics
+    col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Total Revenue", f"KES {format_with_commas(total_revenue)}")
     col2.metric("Total Feed Cost", f"KES {format_with_commas(total_feed_cost)}")
     col3.metric("Total Health Cost", f"KES {format_with_commas(total_health_cost)}")
@@ -134,21 +149,23 @@ def reports_page(start_date, end_date, granularity):
     
     st.markdown("---")
     
-    col6, col7, col8 = st.columns(3)
-    col6.metric("Total Profit/Loss", f"KES {format_with_commas(total_profit)}", 
+    col6, col7, col8, col9 = st.columns(4)
+    col6.metric("Total Cost", f"KES {format_with_commas(total_cost)}")
+    col7.metric("Total Feed Purchased", f"KES {format_with_commas(total_feed_purchased)}")
+    col8.metric("Total Profit/Loss", f"KES {format_with_commas(total_profit)}", 
                delta_color="inverse" if total_profit < 0 else "normal")
     
     if total_feed_cost > 0:
         feed_efficiency = total_revenue / total_feed_cost
-        col7.metric("Feed Efficiency Ratio", f"{feed_efficiency:.2f}")
+        col9.metric("Feed Efficiency Ratio", f"{feed_efficiency:.2f}")
     
     if total_revenue > 0:
         profit_margin = (total_profit / total_revenue) * 100
-        col8.metric("Profit Margin", f"{profit_margin:.1f}%")
+        st.metric("Profit Margin", f"{profit_margin:.1f}%")
     
     st.markdown("---")
     
-    tab1, tab2, tab3 = st.tabs(["Revenue & Costs", "Milk Production", "Profit Analysis"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Revenue & Costs", "Milk Production", "Feed Insights", "Profit Analysis"])
     
     with tab1:
         fig_rev_cost = go.Figure()
@@ -162,16 +179,117 @@ def reports_page(start_date, end_date, granularity):
         st.plotly_chart(fig_rev_cost, use_container_width=True)
     
     with tab2:
-        if not milk.empty:
+        # Use milk_totals for production chart if available
+        if not milk_totals.empty:
+            milk_by_period = milk_totals.groupby("date")["total_litres"].sum().reset_index()
+            fig_milk = px.line(milk_by_period, x="date", y="total_litres", 
+                              title="Milk Production Over Time (Total Litres)",
+                              labels={"total_litres": "Total Liters", "date": "Date"})
+            st.plotly_chart(fig_milk, use_container_width=True)
+        elif not milk.empty:
+            # Fallback to individual records if totals not available
             milk_by_period = milk.groupby("date")["litres_sell"].sum().reset_index()
             fig_milk = px.line(milk_by_period, x="date", y="litres_sell", 
-                              title="Milk Production Over Time",
-                              labels={"litres_sell": "Liters", "date": "Date"})
+                              title="Milk Production Over Time (Litres Sold)",
+                              labels={"litres_sell": "Liters Sold", "date": "Date"})
             st.plotly_chart(fig_milk, use_container_width=True)
         else:
             st.info("No milk production data available")
     
     with tab3:
+        st.subheader("Feed Insights and Analysis")
+        
+        # 1. Feed Cost Per Liter Analysis
+        st.write("#### Feed Cost Per Liter")
+        if not milk_totals.empty and not fu.empty:
+            # Calculate feed cost per liter
+            feed_used_cost = fu.merge(fr[['feed_type', 'cost']], on='feed_type', how='left')
+            total_feed_used_cost = feed_used_cost['cost'].sum()
+            total_milk_produced = milk_totals['total_litres'].sum()
+            
+            if total_milk_produced > 0:
+                feed_cost_per_liter = total_feed_used_cost / total_milk_produced
+                st.metric("Average Feed Cost Per Liter", f"KES {feed_cost_per_liter:.2f}")
+                
+                # Trend over time
+                milk_daily_totals = milk_totals.groupby("date")["total_litres"].sum().reset_index()
+                feed_daily_cost = fu.merge(fr[['feed_type', 'cost']], on='feed_type', how='left')
+                feed_daily_cost = feed_daily_cost.groupby("date")["cost"].sum().reset_index()
+                
+                merged_daily = milk_daily_totals.merge(feed_daily_cost, on="date", how="left").fillna(0)
+                merged_daily["feed_cost_per_liter"] = merged_daily.apply(
+                    lambda row: row["cost"] / row["total_litres"] if row["total_litres"] > 0 else 0, axis=1
+                )
+                
+                fig_cost_per_liter = px.line(merged_daily, x="date", y="feed_cost_per_liter",
+                                           title="Feed Cost Per Liter Over Time",
+                                           labels={"feed_cost_per_liter": "Cost Per Liter (KES)", "date": "Date"})
+                st.plotly_chart(fig_cost_per_liter, use_container_width=True)
+            else:
+                st.info("No milk production data available for feed cost per liter calculation")
+        else:
+            st.info("Need both milk production and feed usage data for feed cost analysis")
+        
+        # 2. Feed Consumption Patterns
+        st.write("#### Feed Consumption Patterns")
+        if not fu.empty:
+            # Consumption by category
+            consumption_by_category = fu.groupby("category")["quantity"].sum().reset_index()
+            fig_category = px.pie(consumption_by_category, values="quantity", names="category",
+                                 title="Feed Consumption by Cow Category")
+            st.plotly_chart(fig_category, use_container_width=True)
+            
+            # Consumption trends over time
+            consumption_trend = fu.groupby("date")["quantity"].sum().reset_index()
+            fig_trend = px.line(consumption_trend, x="date", y="quantity",
+                               title="Feed Consumption Over Time",
+                               labels={"quantity": "Quantity (kg)", "date": "Date"})
+            st.plotly_chart(fig_trend, use_container_width=True)
+        else:
+            st.info("No feed usage data available")
+        
+        # 3. Feed Cost Breakdown
+        st.write("#### Feed Cost Breakdown")
+        if not fr.empty:
+            cost_by_feed_type = fr.groupby("feed_type")["cost"].sum().reset_index()
+            fig_feed_cost = px.pie(cost_by_feed_type, values="cost", names="feed_type",
+                                  title="Feed Cost Distribution by Type")
+            st.plotly_chart(fig_feed_cost, use_container_width=True)
+            
+            # Average cost per kg for each feed type
+            fr_with_avg = fr.copy()
+            fr_with_avg["cost_per_kg"] = fr_with_avg["cost"] / fr_with_avg["quantity"]
+            avg_cost_by_type = fr_with_avg.groupby("feed_type")["cost_per_kg"].mean().reset_index()
+            
+            fig_avg_cost = px.bar(avg_cost_by_type, x="feed_type", y="cost_per_kg",
+                                 title="Average Cost Per Kg by Feed Type",
+                                 labels={"feed_type": "Feed Type", "cost_per_kg": "Cost Per Kg (KES)"})
+            st.plotly_chart(fig_avg_cost, use_container_width=True)
+        else:
+            st.info("No feed receipt data available")
+        
+        # 4. Feed-to-Production Correlation
+        st.write("#### Feed-to-Production Correlation")
+        if not fu.empty and not milk_totals.empty:
+            # Aggregate data by date
+            feed_by_date = fu.groupby("date")["quantity"].sum().reset_index()
+            milk_by_date = milk_totals.groupby("date")["total_litres"].sum().reset_index()
+            
+            merged_data = feed_by_date.merge(milk_by_date, on="date", how="inner")
+            
+            fig_correlation = px.scatter(merged_data, x="quantity", y="total_litres",
+                                       title="Feed Consumption vs Milk Production",
+                                       labels={"quantity": "Feed Consumed (kg)", "total_litres": "Milk Produced (L)"},
+                                       trendline="ols")
+            st.plotly_chart(fig_correlation, use_container_width=True)
+            
+            # Calculate correlation coefficient
+            correlation = merged_data["quantity"].corr(merged_data["total_litres"])
+            st.metric("Correlation Coefficient", f"{correlation:.2f}")
+        else:
+            st.info("Need both feed usage and milk production data for correlation analysis")
+    
+    with tab4:
         fig_profit = px.area(df_agg, x="date", y="profit", 
                             title="Profit/Loss Over Time",
                             labels={"profit": "KES", "date": "Date"})
@@ -255,6 +373,42 @@ def reports_page(start_date, end_date, granularity):
                 file_name=f"cow_profit_{start_date}_{end_date}.csv",
                 mime="text/csv"
             )
+
+def calculate_monthly_salaries(employees, start_date, end_date):
+    """
+    Calculate monthly salaries paid on the 1st of each month
+    """
+    # Create a date range for the 1st of each month in the period
+    start_dt = pd.to_datetime(start_date)
+    end_dt = pd.to_datetime(end_date)
+    
+    # Generate all 1st of month dates in the range
+    monthly_dates = pd.date_range(
+        start=start_dt.replace(day=1),
+        end=end_dt.replace(day=1),
+        freq='MS'
+    )
+    
+    # Create a DataFrame to store salary costs
+    salary_costs = pd.DataFrame(index=monthly_dates, columns=["salary_cost"])
+    salary_costs.index.name = "date"
+    salary_costs["salary_cost"] = 0.0
+    
+    # For each month, add salaries for employees active on the 1st of that month
+    for month_start in monthly_dates:
+        total_monthly_salary = 0
+        
+        for _, emp in employees.iterrows():
+            emp_start = pd.to_datetime(emp["start_date"])
+            emp_end = pd.to_datetime(emp["end_date"]) if pd.notna(emp["end_date"]) else pd.Timestamp.max
+            
+            # Check if employee was active on the 1st of this month
+            if emp_start <= month_start <= emp_end:
+                total_monthly_salary += emp["salary"]
+        
+        salary_costs.loc[month_start, "salary_cost"] = total_monthly_salary
+    
+    return salary_costs
 
 def generate_pdf_report(df_agg, profit_per_cow, start_date, end_date):
     if not REPORTLAB_AVAILABLE:
