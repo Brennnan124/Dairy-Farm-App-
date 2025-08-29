@@ -8,16 +8,6 @@ def get_feed_inventory():
     received = get_collection("feeds_received")
     used = get_collection("feeds_used")
     
-    # Debug: Check data availability and structure
-    if received is not None:
-        print(f"Debug: feeds_received shape: {received.shape}, columns: {received.columns.tolist()}")
-    else:
-        print("Debug: feeds_received is None")
-    if used is not None:
-        print(f"Debug: feeds_used shape: {used.shape}, columns: {used.columns.tolist()}")
-    else:
-        print("Debug: feeds_used is None")
-    
     if received.empty and used.empty:
         return pd.DataFrame()
     
@@ -44,7 +34,6 @@ def get_feed_inventory():
     
     return inventory
 
-# Rest of the functions remain unchanged...
 def get_available_feed_types():
     inventory = get_feed_inventory()
     if inventory.empty:
@@ -60,23 +49,67 @@ def get_cows_by_status(status):
     cows_df = load_table("cows")
     return cows_df[cows_df["status"] == status]["name"].tolist() if not cows_df.empty else []
 
+def calculate_feed_cost_used(start_date, end_date):
+    """
+    Calculate the cost of feed used based on the average cost of each feed type
+    from the feeds_received records.
+    """
+    # Load feeds received to calculate average cost per feed type
+    feeds_received = load_table("feeds_received")
+    if feeds_received.empty:
+        return pd.DataFrame()
+    
+    feeds_received = to_date(feeds_received, "date")
+    
+    # Calculate average cost per kg for each feed type
+    feed_costs = {}
+    for feed_type in feeds_received['feed_type'].unique():
+        feed_data = feeds_received[feeds_received['feed_type'] == feed_type]
+        total_cost = feed_data['cost'].sum()
+        total_quantity = feed_data['quantity'].sum()
+        if total_quantity > 0:
+            feed_costs[feed_type] = total_cost / total_quantity
+        else:
+            feed_costs[feed_type] = 0
+    
+    # Load feeds used
+    feeds_used = load_table("feeds_used")
+    if feeds_used.empty:
+        return pd.DataFrame()
+    
+    feeds_used = to_date(feeds_used, "date")
+    feeds_used = feeds_used[(feeds_used['date'] >= start_date) & (feeds_used['date'] <= end_date)]
+    
+    # Calculate cost for each feed usage
+    feeds_used['cost'] = feeds_used.apply(
+        lambda row: row['quantity'] * feed_costs.get(row['feed_type'], 0), 
+        axis=1
+    )
+    
+    return feeds_used
+
 def calculate_profit_per_cow(start_date, end_date):
     cows_df = load_table("cows")
-    milk_df = load_table("milk_production")
+    milk_df = load_table("milk_production")  # Use individual cow records, not totals
     
     if not milk_df.empty and 'date' in milk_df.columns:
         milk_df = to_date(milk_df, "date")
         milk_df = milk_df[(milk_df["date"] >= start_date) & (milk_df["date"] <= end_date)]
     
-    feeds_used_df = load_table("feeds_used")
-    if not feeds_used_df.empty and 'date' in feeds_used_df.columns:
-        feeds_used_df = to_date(feeds_used_df, "date")
-        feeds_used_df = feeds_used_df[(feeds_used_df["date"] >= start_date) & (feeds_used_df["date"] <= end_date)]
+    # Calculate feed cost used (based on actual consumption)
+    feeds_used_cost = calculate_feed_cost_used(start_date, end_date)
+    if not feeds_used_cost.empty and 'cost' in feeds_used_cost.columns:
+        total_feed_cost = feeds_used_cost['cost'].sum()
+    else:
+        total_feed_cost = 0
     
     health_df = load_table("health_records")
     if not health_df.empty and 'date' in health_df.columns:
         health_df = to_date(health_df, "date")
         health_df = health_df[(health_df["date"] >= start_date) & (health_df["date"] <= end_date)]
+        total_health_cost = health_df["cost"].sum() if 'cost' in health_df.columns else 0
+    else:
+        total_health_cost = 0
 
     if not cows_df.empty and 'status' in cows_df.columns:
         lactating_cows = cows_df[cows_df["status"] == "Lactating"]
@@ -86,22 +119,12 @@ def calculate_profit_per_cow(start_date, end_date):
     if lactating_cows.empty:
         return pd.DataFrame()
     
-    if milk_df.empty or 'litres_sell' not in milk_df.columns:
+    if milk_df.empty:
         return pd.DataFrame()
     
+    # Use individual cow records (litres_sell) for profit per cow calculation
     milk_per_cow = milk_df.groupby("cow")["litres_sell"].sum().reset_index()
     milk_per_cow["revenue"] = milk_per_cow["litres_sell"] * 43
-    
-    if not feeds_used_df.empty and 'quantity' in feeds_used_df.columns:
-        feeds_used_df = feeds_used_df[feeds_used_df["category"] == "Grown Cow"]
-        total_feed_cost = feeds_used_df["quantity"].sum()
-    else:
-        total_feed_cost = 0
-    
-    if not health_df.empty and 'cost' in health_df.columns:
-        total_health_cost = health_df["cost"].sum()
-    else:
-        total_health_cost = 0
     
     if 'status' in cows_df.columns:
         num_grown_cows = len(cows_df[cows_df["status"].isin(["Lactating", "Dry"])])
