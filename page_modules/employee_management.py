@@ -2,7 +2,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import date
-from firebase_utils import get_collection, add_document
+from firebase_utils import get_collection, add_document, update_document
 
 def get_employees():
     employees = get_collection("employees")
@@ -21,8 +21,40 @@ def employee_management_page():
     if not employees.empty:
         st.subheader("Current Employees")
         current_employees = employees[employees["end_date"].isna()]
-        current_employees_display = current_employees.drop(columns=["id"])  # Remove id
-        st.dataframe(current_employees_display)
+        
+        # Display current employees
+        if not current_employees.empty:
+            current_employees_display = current_employees.drop(columns=["id"])  # Remove id
+            st.dataframe(current_employees_display)
+            
+            # Add termination section
+            st.markdown("---")
+            st.subheader("Terminate Employee")
+            
+            # Create a list of current employees for selection
+            employee_options = []
+            for _, emp in current_employees.iterrows():
+                employee_options.append(f"{emp['name']} ({emp['role']}) - ID: {emp['id']}")
+            
+            selected_employee = st.selectbox("Select Employee to Terminate", employee_options)
+            
+            if selected_employee:
+                # Extract employee ID from selection
+                employee_id = selected_employee.split("ID: ")[1]
+                employee_name = selected_employee.split(" (")[0]
+                
+                if st.button("Terminate Employee", type="primary"):
+                    # Update employee record with termination date
+                    if update_document("employees", employee_id, {
+                        "end_date": date.today().isoformat(),
+                        "status": "Terminated"
+                    }):
+                        st.success(f"Employee {employee_name} has been terminated")
+                        st.rerun()
+                    else:
+                        st.error("Failed to terminate employee")
+        else:
+            st.info("No active employees in the system")
         
         st.markdown("---")
         st.subheader("Add New Employee")
@@ -58,8 +90,17 @@ def employee_management_page():
                     
                     if add_document("employees", employee_data):
                         st.success(f"Employee {name} added successfully")
+                        st.rerun()
                     else:
                         st.error("Failed to add employee")
+        
+        # Show terminated employees
+        terminated_employees = employees[employees["end_date"].notna()]
+        if not terminated_employees.empty:
+            st.markdown("---")
+            st.subheader("Terminated Employees")
+            terminated_display = terminated_employees.drop(columns=["id"])
+            st.dataframe(terminated_display)
     
     else:
         st.info("No employees in the system")
@@ -91,5 +132,6 @@ def employee_management_page():
                     
                     if add_document("employees", employee_data):
                         st.success(f"Employee {name} added successfully")
+                        st.rerun()
                     else:
                         st.error("Failed to add employee")
