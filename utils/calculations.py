@@ -1,6 +1,6 @@
 # dairy_farm_app/utils/calculations.py
 import pandas as pd
-from datetime import date
+from datetime import date, datetime
 from firebase_utils import get_collection
 from utils.data_loader import load_table, to_date
 
@@ -51,28 +51,17 @@ def get_cows_by_status(status):
 
 def calculate_feed_cost_used(start_date, end_date):
     """
-    Calculate the cost of feed used based on the average cost of each feed type
-    from the feeds_received records.
+    Calculate the cost of feed used based on FIFO (First-In-First-Out) method
     """
-    # Load feeds received to calculate average cost per feed type
+    # Load and filter feeds received
     feeds_received = load_table("feeds_received")
     if feeds_received.empty:
         return pd.DataFrame()
     
     feeds_received = to_date(feeds_received, "date")
+    feeds_received = feeds_received.sort_values("date")  # Sort by date for FIFO
     
-    # Calculate average cost per kg for each feed type
-    feed_costs = {}
-    for feed_type in feeds_received['feed_type'].unique():
-        feed_data = feeds_received[feeds_received['feed_type'] == feed_type]
-        total_cost = feed_data['cost'].sum()
-        total_quantity = feed_data['quantity'].sum()
-        if total_quantity > 0:
-            feed_costs[feed_type] = total_cost / total_quantity
-        else:
-            feed_costs[feed_type] = 0
-    
-    # Load feeds used
+    # Load and filter feeds used
     feeds_used = load_table("feeds_used")
     if feeds_used.empty:
         return pd.DataFrame()
@@ -80,23 +69,75 @@ def calculate_feed_cost_used(start_date, end_date):
     feeds_used = to_date(feeds_used, "date")
     feeds_used = feeds_used[(feeds_used['date'] >= start_date) & (feeds_used['date'] <= end_date)]
     
-    # Calculate cost for each feed usage
-    feeds_used['cost'] = feeds_used.apply(
-        lambda row: row['quantity'] * feed_costs.get(row['feed_type'], 0), 
-        axis=1
-    )
+    # For each feed usage, calculate cost based on available inventory at time of use
+    feed_costs = []
     
-    return feeds_used
+    for _, usage in feeds_used.iterrows():
+        usage_date = usage['date']
+        feed_type = usage['feed_type']
+        quantity_used = usage['quantity']
+        
+        # Get all receipts of this feed type before the usage date
+        available_feed = feeds_received[
+            (feeds_received['feed_type'] == feed_type) & 
+            (feeds_received['date'] <= usage_date)
+        ].copy()
+        
+        if available_feed.empty:
+            # No feed available before usage date - use latest cost
+            latest_feed = feeds_received[feeds_received['feed_type'] == feed_type]
+            if not latest_feed.empty:
+                latest_feed = latest_feed.sort_values('date').iloc[-1]
+                cost_per_kg = latest_feed['cost'] / latest_feed['quantity']
+                feed_cost = quantity_used * cost_per_kg
+                feed_costs.append({
+                    'date': usage_date,
+                    'feed_type': feed_type,
+                    'quantity': quantity_used,
+                    'cost': feed_cost,
+                    'method': 'latest_cost'
+                })
+            continue
+        
+        # Calculate cost using FIFO method
+        remaining_quantity = quantity_used
+        total_cost = 0
+        
+        for _, receipt in available_feed.sort_values('date').iterrows():
+            if remaining_quantity <= 0:
+                break
+                
+            receipt_quantity_available = receipt['quantity']
+            receipt_cost_per_kg = receipt['cost'] / receipt['quantity']
+            
+            quantity_to_use = min(remaining_quantity, receipt_quantity_available)
+            cost_for_this_receipt = quantity_to_use * receipt_cost_per_kg
+            
+            total_cost += cost_for_this_receipt
+            remaining_quantity -= quantity_to_use
+        
+        feed_costs.append({
+            'date': usage_date,
+            'feed_type': feed_type,
+            'quantity': quantity_used,
+            'cost': total_cost,
+            'method': 'fifo'
+        })
+    
+    if not feed_costs:
+        return pd.DataFrame()
+    
+    return pd.DataFrame(feed_costs)
 
 def calculate_profit_per_cow(start_date, end_date):
     cows_df = load_table("cows")
-    milk_df = load_table("milk_production")  # Use individual cow records, not totals
+    milk_df = load_table("milk_production")
     
     if not milk_df.empty and 'date' in milk_df.columns:
         milk_df = to_date(milk_df, "date")
         milk_df = milk_df[(milk_df["date"] >= start_date) & (milk_df["date"] <= end_date)]
     
-    # Calculate feed cost used (based on actual consumption)
+    # Calculate feed cost using the improved method
     feeds_used_cost = calculate_feed_cost_used(start_date, end_date)
     if not feeds_used_cost.empty and 'cost' in feeds_used_cost.columns:
         total_feed_cost = feeds_used_cost['cost'].sum()
@@ -126,28 +167,31 @@ def calculate_profit_per_cow(start_date, end_date):
     milk_per_cow = milk_df.groupby("cow")["litres_sell"].sum().reset_index()
     milk_per_cow["revenue"] = milk_per_cow["litres_sell"] * 43
     
-    if 'status' in cows_df.columns:
-        num_grown_cows = len(cows_df[cows_df["status"].isin(["Lactating", "Dry"])])
+    # Allocate costs based on milk production rather than equally
+    total_milk_produced = milk_per_cow["litres_sell"].sum()
+    
+    if total_milk_produced > 0:
+        # Calculate cost per liter
+        cost_per_liter = (total_feed_cost + total_health_cost) / total_milk_produced
+        
+        result = pd.merge(lactating_cows[["name"]], milk_per_cow, 
+                         left_on="name", right_on="cow", how="left")
+        
+        result["litres_sell"] = result["litres_sell"].fillna(0)
+        result["revenue"] = result["revenue"].fillna(0)
+        
+        # Allocate costs based on milk production
+        result["feed_cost"] = result["litres_sell"] * cost_per_liter
+        result["profit"] = result["revenue"] - result["feed_cost"]
+        
+        result = result.rename(columns={
+            "name": "Cow",
+            "litres_sell": "Milk Produced (L)",
+            "revenue": "Revenue (KES)",
+            "feed_cost": "Cost (KES)",
+            "profit": "Profit (KES)"
+        })
+        
+        return result[["Cow", "Milk Produced (L)", "Revenue (KES)", "Cost (KES)", "Profit (KES)"]]
     else:
-        num_grown_cows = 0
-    
-    cost_per_cow = (total_feed_cost + total_health_cost) / num_grown_cows if num_grown_cows > 0 else 0
-    
-    result = pd.merge(lactating_cows[["name"]], milk_per_cow, 
-                     left_on="name", right_on="cow", how="left")
-    
-    result["litres_sell"] = result["litres_sell"].fillna(0)
-    result["revenue"] = result["revenue"].fillna(0)
-    
-    result["feed_cost"] = cost_per_cow
-    result["profit"] = result["revenue"] - result["feed_cost"]
-    
-    result = result.rename(columns={
-        "name": "Cow",
-        "litres_sell": "Milk Produced (L)",
-        "revenue": "Revenue (KES)",
-        "feed_cost": "Cost (KES)",
-        "profit": "Profit (KES)"
-    })
-    
-    return result[["Cow", "Milk Produced (L)", "Revenue (KES)", "Cost (KES)", "Profit (KES)"]]
+        return pd.DataFrame()
