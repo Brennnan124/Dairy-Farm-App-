@@ -16,6 +16,13 @@ try:
 except Exception:
     REPORTLAB_AVAILABLE = False
 
+# Add statsmodels import with error handling
+try:
+    import statsmodels.api as sm
+    HAS_STATSMODELS = True
+except ImportError:
+    HAS_STATSMODELS = False
+
 def reports_page(start_date, end_date, granularity):
     st.title("📊 Reports")
     
@@ -163,6 +170,21 @@ def reports_page(start_date, end_date, granularity):
         profit_margin = (total_profit / total_revenue) * 100
         st.metric("Profit Margin", f"{profit_margin:.1f}%")
     
+    # Add validation check
+    if total_feed_cost > 0 and total_revenue > 0:
+        calculated_feed_cost_per_liter = total_feed_cost / (total_revenue / price_per_litre)
+        calculated_efficiency = price_per_litre / calculated_feed_cost_per_liter
+        
+        st.write("#### Data Validation")
+        st.info(f"""
+        - Calculated Feed Cost/L: KES {calculated_feed_cost_per_liter:.2f}
+        - Calculated Efficiency: {calculated_efficiency:.2f}
+        - Milk Price: KES {price_per_litre}/L
+        """)
+        
+        if abs(calculated_efficiency - feed_efficiency) > 0.1:
+            st.error("Inconsistency detected between feed cost and efficiency calculations!")
+    
     st.markdown("---")
     
     tab1, tab2, tab3, tab4 = st.tabs(["Revenue & Costs", "Milk Production", "Feed Insights", "Profit Analysis"])
@@ -199,38 +221,77 @@ def reports_page(start_date, end_date, granularity):
     with tab3:
         st.subheader("Feed Insights and Analysis")
         
-        # 1. Feed Cost Per Liter Analysis
+        # 1. Feed Cost Per Liter Analysis (CORRECTED)
         st.write("#### Feed Cost Per Liter")
-        if not milk_totals.empty and not fu.empty:
-            # Calculate feed cost per liter
-            feed_used_cost = fu.merge(fr[['feed_type', 'cost']], on='feed_type', how='left')
-            total_feed_used_cost = feed_used_cost['cost'].sum()
+        if not milk_totals.empty and not fu.empty and not fr.empty:
+            # Calculate average cost per kg for each feed type
+            fr['cost_per_kg'] = fr['cost'] / fr['quantity']
+            avg_cost_per_feed = fr.groupby('feed_type')['cost_per_kg'].mean().reset_index()
+            
+            # Merge with feeds_used to calculate actual cost of used feed
+            fu_with_cost = fu.merge(avg_cost_per_feed, on='feed_type', how='left')
+            fu_with_cost['actual_cost'] = fu_with_cost['quantity'] * fu_with_cost['cost_per_kg']
+            total_feed_used_cost = fu_with_cost['actual_cost'].sum()
+            
+            # Now calculate feed cost per liter
             total_milk_produced = milk_totals['total_litres'].sum()
             
             if total_milk_produced > 0:
                 feed_cost_per_liter = total_feed_used_cost / total_milk_produced
                 st.metric("Average Feed Cost Per Liter", f"KES {feed_cost_per_liter:.2f}")
                 
+                # Add explanation
+                if feed_cost_per_liter > price_per_litre:  # If cost exceeds selling price
+                    st.warning(f"⚠️ Feed cost (KES {feed_cost_per_liter:.2f}/L) exceeds milk price (KES {price_per_litre}/L)!")
+                    st.info("This suggests either: 1) High feed costs, 2) Low milk production, or 3) Data entry errors")
+                elif feed_cost_per_liter > price_per_litre * 0.6:  # If cost is more than 60% of selling price
+                    st.warning(f"⚠️ High feed cost: {feed_cost_per_liter/price_per_litre*100:.1f}% of milk price")
+                else:
+                    st.success(f"✓ Feed cost is {feed_cost_per_liter/price_per_litre*100:.1f}% of milk price")
+                
                 # Trend over time
                 milk_daily_totals = milk_totals.groupby("date")["total_litres"].sum().reset_index()
-                feed_daily_cost = fu.merge(fr[['feed_type', 'cost']], on='feed_type', how='left')
-                feed_daily_cost = feed_daily_cost.groupby("date")["cost"].sum().reset_index()
+                feed_daily_cost = fu_with_cost.groupby("date")["actual_cost"].sum().reset_index()
                 
                 merged_daily = milk_daily_totals.merge(feed_daily_cost, on="date", how="left").fillna(0)
                 merged_daily["feed_cost_per_liter"] = merged_daily.apply(
-                    lambda row: row["cost"] / row["total_litres"] if row["total_litres"] > 0 else 0, axis=1
+                    lambda row: row["actual_cost"] / row["total_litres"] if row["total_litres"] > 0 else 0, axis=1
                 )
                 
                 fig_cost_per_liter = px.line(merged_daily, x="date", y="feed_cost_per_liter",
-                                           title="Feed Cost Per Liter Over Time",
+                                           title="Feed Cost Per Liter Over Time (Corrected Calculation)",
                                            labels={"feed_cost_per_liter": "Cost Per Liter (KES)", "date": "Date"})
                 st.plotly_chart(fig_cost_per_liter, use_container_width=True)
             else:
                 st.info("No milk production data available for feed cost per liter calculation")
         else:
-            st.info("Need both milk production and feed usage data for feed cost analysis")
+            st.info("Need milk production, feed usage, and feed receipt data for feed cost analysis")
         
-        # 2. Feed Consumption Patterns
+        # 2. Feed Efficiency Ratio Explanation
+        st.write("#### Feed Efficiency Ratio")
+        if total_feed_cost > 0 and total_revenue > 0:
+            feed_efficiency = total_revenue / total_feed_cost
+            st.metric("Feed Efficiency Ratio", f"{feed_efficiency:.2f}")
+            
+            # Add interpretation
+            if feed_efficiency < 1.5:
+                st.error("Low efficiency: Feed costs are too high relative to milk revenue")
+                st.info("Each KES 1 spent on feed generates only KES {:.2f} in milk revenue".format(feed_efficiency))
+            elif feed_efficiency < 2.5:
+                st.warning("Moderate efficiency: Room for improvement in feed utilization")
+                st.info("Each KES 1 spent on feed generates KES {:.2f} in milk revenue".format(feed_efficiency))
+            else:
+                st.success("Good efficiency: Feed is being converted to milk effectively")
+                st.info("Each KES 1 spent on feed generates KES {:.2f} in milk revenue".format(feed_efficiency))
+            
+            st.info("""
+            **Interpretation Guide:**
+            - < 1.5: Poor efficiency (losing money on feed)
+            - 1.5-2.5: Moderate efficiency 
+            - > 2.5: Good efficiency (each KES 1 of feed generates > KES 2.5 of milk revenue)
+            """)
+        
+        # 3. Feed Consumption Patterns
         st.write("#### Feed Consumption Patterns")
         if not fu.empty:
             # Consumption by category
@@ -248,7 +309,7 @@ def reports_page(start_date, end_date, granularity):
         else:
             st.info("No feed usage data available")
         
-        # 3. Feed Cost Breakdown
+        # 4. Feed Cost Breakdown
         st.write("#### Feed Cost Breakdown")
         if not fr.empty:
             cost_by_feed_type = fr.groupby("feed_type")["cost"].sum().reset_index()
@@ -268,7 +329,7 @@ def reports_page(start_date, end_date, granularity):
         else:
             st.info("No feed receipt data available")
         
-        # 4. Feed-to-Production Correlation
+        # 5. Feed-to-Production Correlation
         st.write("#### Feed-to-Production Correlation")
         if not fu.empty and not milk_totals.empty:
             # Aggregate data by date
@@ -277,15 +338,33 @@ def reports_page(start_date, end_date, granularity):
             
             merged_data = feed_by_date.merge(milk_by_date, on="date", how="inner")
             
-            fig_correlation = px.scatter(merged_data, x="quantity", y="total_litres",
-                                       title="Feed Consumption vs Milk Production",
-                                       labels={"quantity": "Feed Consumed (kg)", "total_litres": "Milk Produced (L)"},
-                                       trendline="ols")
+            # Check if statsmodels is available for trendline
+            if HAS_STATSMODELS:
+                fig_correlation = px.scatter(merged_data, x="quantity", y="total_litres",
+                                           title="Feed Consumption vs Milk Production",
+                                           labels={"quantity": "Feed Consumed (kg)", "total_litres": "Milk Produced (L)"},
+                                           trendline="ols")
+            else:
+                fig_correlation = px.scatter(merged_data, x="quantity", y="total_litres",
+                                           title="Feed Consumption vs Milk Production",
+                                           labels={"quantity": "Feed Consumed (kg)", "total_litres": "Milk Produced (L)"})
+                st.info("Install 'statsmodels' package to see trendlines")
+            
             st.plotly_chart(fig_correlation, use_container_width=True)
             
             # Calculate correlation coefficient
             correlation = merged_data["quantity"].corr(merged_data["total_litres"])
             st.metric("Correlation Coefficient", f"{correlation:.2f}")
+            
+            # Interpretation
+            if correlation > 0.7:
+                st.success("Strong positive correlation: Feed consumption strongly predicts milk production")
+            elif correlation > 0.3:
+                st.info("Moderate positive correlation: Feed consumption somewhat predicts milk production")
+            elif correlation > -0.3:
+                st.warning("Weak correlation: Little relationship between feed and production")
+            else:
+                st.error("Negative correlation: More feed associated with less milk (data issue?)")
         else:
             st.info("Need both feed usage and milk production data for correlation analysis")
     
