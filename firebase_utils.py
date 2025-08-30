@@ -121,33 +121,6 @@ def delete_document(collection_name, doc_id):
         st.error(f"Error deleting {collection_name}/{doc_id} on Cloud: {e}")
         return False
 
-def get_document(collection_name, document_id):
-    """Get a single document from Firestore"""
-    if not db:
-        return None
-    try:
-        doc_ref = db.collection(collection_name).document(document_id)
-        doc = doc_ref.get()
-        if doc.exists:
-            return doc.to_dict()
-        else:
-            return None
-    except Exception as e:
-        st.error(f"Error getting document on Cloud: {e}")
-        return None
-
-def set_document(collection_name, document_id, data):
-    """Set a document in Firestore (creates or overwrites)"""
-    if not db:
-        return False
-    try:
-        doc_ref = db.collection(collection_name).document(document_id)
-        doc_ref.set(data)
-        return True
-    except Exception as e:
-        st.error(f"Error setting document on Cloud: {e}")
-        return False
-
 def log_audit_event(user, action, details=""):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     add_document("audit_log", {
