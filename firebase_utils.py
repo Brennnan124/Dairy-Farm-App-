@@ -19,12 +19,12 @@ def get_firebase_app():
 
             config = st.secrets["firebase_config"]
 
-            # Manually create a new config dict with modified private_key
-            modified_config = {
+            # Create the service account dictionary
+            service_account_info = {
                 "type": config.get("type"),
                 "project_id": config.get("project_id"),
                 "private_key_id": config.get("private_key_id"),
-                "private_key": config.get("private_key", "").replace("\\n", "\n") if isinstance(config.get("private_key"), str) else "",
+                "private_key": config.get("private_key", "").replace("\\n", "\n"),
                 "client_email": config.get("client_email"),
                 "client_id": config.get("client_id"),
                 "auth_uri": config.get("auth_uri"),
@@ -33,41 +33,47 @@ def get_firebase_app():
                 "client_x509_cert_url": config.get("client_x509_cert_url"),
                 "universe_domain": config.get("universe_domain")
             }
-            if not modified_config["private_key"].startswith("-----BEGIN PRIVATE KEY-----"):
-                st.error("Invalid 'private_key' format after processing.")
-                st.session_state.firebase_initialized = False
-                return None
 
             # Validate required fields
             required_fields = [
                 'type', 'project_id', 'private_key_id', 'private_key',
                 'client_email', 'client_id', 'auth_uri', 'token_uri'
             ]
-            missing_fields = [field for field in required_fields if not modified_config.get(field)]
+            missing_fields = [field for field in required_fields if not service_account_info.get(field)]
             if missing_fields:
                 st.error(f"Invalid Firebase config: Missing fields: {', '.join(missing_fields)}.")
                 st.session_state.firebase_initialized = False
                 return None
 
-            if not re.match(r'^[a-z0-9-]{6,30}$', modified_config['project_id']):
-                st.error(f"Invalid 'project_id' in Firebase config: {modified_config['project_id']}.")
+            if not re.match(r'^[a-z0-9-]{6,30}$', service_account_info['project_id']):
+                st.error(f"Invalid 'project_id' in Firebase config: {service_account_info['project_id']}.")
                 st.session_state.firebase_initialized = False
                 return None
 
+            if not service_account_info["private_key"].startswith("-----BEGIN PRIVATE KEY-----"):
+                st.error("Invalid 'private_key' format after processing.")
+                st.session_state.firebase_initialized = False
+                return None
+
+            # Initialize Firebase
             if not firebase_admin._apps:
-                cred = credentials.Certificate(modified_config)
+                cred = credentials.Certificate(service_account_info)
                 firebase_admin.initialize_app(cred)
                 st.session_state.firebase_initialized = True
+                st.success("Firebase initialized successfully on Cloud!")
             else:
                 st.session_state.firebase_initialized = True
 
             return firestore.client()
+            
         except Exception as e:
             st.error(f"Firebase initialization error on Cloud: {str(e)}")
             st.session_state.firebase_initialized = False
             return None
+    
     return firestore.client() if st.session_state.firebase_initialized else None
 
+# Initialize Firebase
 db = get_firebase_app()
 
 def initialize_firebase():
@@ -93,6 +99,7 @@ def get_collection(collection_name):
 
 def add_document(collection_name, data):
     if not db:
+        st.error("Firebase not initialized")
         return False
     try:
         db.collection(collection_name).add(data)
@@ -103,6 +110,7 @@ def add_document(collection_name, data):
 
 def update_document(collection_name, doc_id, data):
     if not db:
+        st.error("Firebase not initialized")
         return False
     try:
         db.collection(collection_name).document(doc_id).update(data)
@@ -113,6 +121,7 @@ def update_document(collection_name, doc_id, data):
 
 def delete_document(collection_name, doc_id):
     if not db:
+        st.error("Firebase not initialized")
         return False
     try:
         db.collection(collection_name).document(doc_id).delete()
@@ -124,6 +133,7 @@ def delete_document(collection_name, doc_id):
 def get_document(collection_name, document_id):
     """Get a single document from Firestore"""
     if not db:
+        st.error("Firebase not initialized")
         return None
     try:
         doc_ref = db.collection(collection_name).document(document_id)
@@ -139,6 +149,7 @@ def get_document(collection_name, document_id):
 def set_document(collection_name, document_id, data):
     """Set a document in Firestore (creates or overwrites)"""
     if not db:
+        st.error("Firebase not initialized")
         return False
     try:
         doc_ref = db.collection(collection_name).document(document_id)
@@ -174,4 +185,5 @@ def is_online():
         st.warning("Offline mode on Cloud: Data will sync when connected.")
         return False
 
-is_online()  # Run on app load to display status
+# Run on app load to display status
+is_online()
