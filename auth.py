@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 STAFF_PASSWORD = os.getenv("STAFF_PASSWORD", "dairy456")
+MANAGER_PASSWORD = os.getenv("MANAGER_PASSWORD", "manager123")  # Simple placeholder password
 MANAGER_EMAILS = os.getenv("MANAGER_EMAILS", "").split(",")
 
 # Initialize Firebase
@@ -47,40 +48,6 @@ def logout():
     st.session_state.last_activity = time.time()
     log_audit_event("System" if not username else username, "LOGOUT", f"User {username or 'unknown'} logged out")
 
-def send_password_reset_email(email):
-    """Send password reset email using Firebase REST API (replaces deprecated Dynamic Links)"""
-    try:
-        # Get Firebase API key from Streamlit secrets
-        api_key = st.secrets.get("FIREBASE_API_KEY")
-        if not api_key:
-            st.error("Firebase API key not configured. Please contact administrator.")
-            return False
-            
-        # Use Firebase REST API to send password reset email
-        reset_url = f"https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={api_key}"
-        reset_data = {
-            "requestType": "PASSWORD_RESET",
-            "email": email
-        }
-        
-        response = requests.post(reset_url, json=reset_data)
-        result = response.json()
-        
-        if 'error' in result:
-            error_msg = result['error'].get('message', 'Unknown error')
-            st.error(f"Password reset failed: {error_msg}")
-            log_audit_event("System", "PASSWORD_RESET_FAILED", f"Error for {email}: {error_msg}")
-            return False
-        else:
-            st.success(f"Password reset email sent to {email}")
-            log_audit_event("System", "PASSWORD_RESET_REQUEST", f"Reset requested for {email}")
-            return True
-            
-    except Exception as e:
-        st.error(f"Password reset failed: {str(e)}")
-        log_audit_event("System", "PASSWORD_RESET_FAILED", f"Error for {email}: {str(e)}")
-        return False
-
 def login_form():
     """Display the login form for managers and staff."""
     initialize_session()
@@ -95,7 +62,6 @@ def login_form():
                 email = st.text_input("Email", key="manager_email")
                 password = st.text_input("Password", type="password", key="manager_password")
                 submit = st.form_submit_button("Login")
-                reset_password = st.form_submit_button("Reset Password")
 
                 if submit:
                     try:
@@ -104,52 +70,23 @@ def login_form():
                             st.error("Not authorized for manager access")
                             log_audit_event("System", "LOGIN_FAILED", f"Unauthorized manager access attempt: {email}")
                             return
-
-                        # Get Firebase API key from Streamlit secrets
-                        api_key = st.secrets.get("FIREBASE_API_KEY")
-                        if not api_key:
-                            st.error("Firebase API key not configured. Please contact administrator.")
-                            return
-
-                        auth_url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={api_key}"
-                        auth_data = {
-                            "email": email,
-                            "password": password,
-                            "returnSecureToken": True
-                        }
-
-                        response = requests.post(auth_url, json=auth_data)
-                        result = response.json()
-
-                        if 'error' in result:
-                            st.error("Invalid email or password")
-                            log_audit_event("System", "LOGIN_FAILED", f"Invalid credentials for: {email}")
-                            return
-
-                        st.session_state.authenticated = True
-                        st.session_state.username = email
-                        st.session_state.role = "Manager"
-                        st.session_state.user_id = result['localId']
-                        st.session_state.last_activity = time.time()
-                        log_audit_event(email, "MANAGER_LOGIN", f"{email} logged in")
-                        st.rerun()
+                        
+                        # Simple password check instead of Firebase auth
+                        if password == MANAGER_PASSWORD:
+                            st.session_state.authenticated = True
+                            st.session_state.username = email
+                            st.session_state.role = "Manager"
+                            st.session_state.user_id = f"manager_{email}"
+                            st.session_state.last_activity = time.time()
+                            log_audit_event(email, "MANAGER_LOGIN", f"{email} logged in")
+                            st.rerun()
+                        else:
+                            st.error("Invalid password")
+                            log_audit_event("System", "LOGIN_FAILED", f"Invalid password for: {email}")
 
                     except Exception as e:
                         st.error(f"Login failed: {str(e)}")
                         log_audit_event("System", "LOGIN_FAILED", f"Attempt with email: {email}")
-
-                if reset_password:
-                    try:
-                        # Verify user exists first
-                        auth.get_user_by_email(email)
-                        # Send password reset using REST API instead of deprecated method
-                        send_password_reset_email(email)
-                    except auth.UserNotFoundError:
-                        st.error("User not found")
-                        log_audit_event("System", "PASSWORD_RESET_FAILED", f"User not found: {email}")
-                    except Exception as e:
-                        st.error(f"Password reset failed: {e}")
-                        log_audit_event("System", "PASSWORD_RESET_FAILED", f"Error for {email}: {str(e)}")
 
         elif role == "Staff":
             with st.form("staff_login_form"):
