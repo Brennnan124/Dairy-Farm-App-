@@ -1,16 +1,11 @@
 import streamlit as st
 import os
 import time
-import requests
-from firebase_admin import auth
 from firebase_utils import log_audit_event, initialize_firebase
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
-STAFF_PASSWORD = os.getenv("STAFF_PASSWORD", "dairy456")
-MANAGER_PASSWORD = os.getenv("MANAGER_PASSWORD", "manager123")  # Simple placeholder password
-MANAGER_EMAILS = os.getenv("MANAGER_EMAILS", "").split(",")
 
 # Initialize Firebase
 firebase_app = initialize_firebase()
@@ -64,29 +59,30 @@ def login_form():
                 submit = st.form_submit_button("Login")
 
                 if submit:
-                    try:
-                        manager_emails = [e.strip() for e in MANAGER_EMAILS]
-                        if email not in manager_emails:
-                            st.error("Not authorized for manager access")
-                            log_audit_event("System", "LOGIN_FAILED", f"Unauthorized manager access attempt: {email}")
-                            return
-                        
-                        # Simple password check instead of Firebase auth
-                        if password == MANAGER_PASSWORD:
-                            st.session_state.authenticated = True
-                            st.session_state.username = email
-                            st.session_state.role = "Manager"
-                            st.session_state.user_id = f"manager_{email}"
-                            st.session_state.last_activity = time.time()
-                            log_audit_event(email, "MANAGER_LOGIN", f"{email} logged in")
-                            st.rerun()
-                        else:
-                            st.error("Invalid password")
-                            log_audit_event("System", "LOGIN_FAILED", f"Invalid password for: {email}")
-
-                    except Exception as e:
-                        st.error(f"Login failed: {str(e)}")
-                        log_audit_event("System", "LOGIN_FAILED", f"Attempt with email: {email}")
+                    # Get manager emails from Streamlit secrets
+                    manager_emails_str = st.secrets.get("MANAGER_EMAILS", "")
+                    manager_emails = [e.strip() for e in manager_emails_str.split(",") if e.strip()]
+                    
+                    if email not in manager_emails:
+                        st.error("Not authorized for manager access")
+                        log_audit_event("System", "LOGIN_FAILED", f"Unauthorized manager access attempt: {email}")
+                        return
+                    
+                    # Get manager password from secrets
+                    manager_password = st.secrets.get("MANAGER_PASSWORD", "manager123")
+                    
+                    # Simple password check instead of Firebase auth
+                    if password == manager_password:
+                        st.session_state.authenticated = True
+                        st.session_state.username = email
+                        st.session_state.role = "Manager"
+                        st.session_state.user_id = f"manager_{email}"
+                        st.session_state.last_activity = time.time()
+                        log_audit_event(email, "MANAGER_LOGIN", f"{email} logged in")
+                        st.rerun()
+                    else:
+                        st.error("Invalid password")
+                        log_audit_event("System", "LOGIN_FAILED", f"Invalid password for: {email}")
 
         elif role == "Staff":
             with st.form("staff_login_form"):
@@ -95,7 +91,10 @@ def login_form():
                 submit = st.form_submit_button("Login")
 
                 if submit:
-                    if password == STAFF_PASSWORD:
+                    # Get staff password from secrets
+                    staff_password = st.secrets.get("STAFF_PASSWORD", "dairy456")
+                    
+                    if password == staff_password:
                         st.session_state.authenticated = True
                         st.session_state.username = username
                         st.session_state.role = "Staff"
