@@ -47,6 +47,40 @@ def logout():
     st.session_state.last_activity = time.time()
     log_audit_event("System" if not username else username, "LOGOUT", f"User {username or 'unknown'} logged out")
 
+def send_password_reset_email(email):
+    """Send password reset email using Firebase REST API (replaces deprecated Dynamic Links)"""
+    try:
+        # Get Firebase API key from Streamlit secrets
+        api_key = st.secrets.get("FIREBASE_API_KEY")
+        if not api_key:
+            st.error("Firebase API key not configured. Please contact administrator.")
+            return False
+            
+        # Use Firebase REST API to send password reset email
+        reset_url = f"https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={api_key}"
+        reset_data = {
+            "requestType": "PASSWORD_RESET",
+            "email": email
+        }
+        
+        response = requests.post(reset_url, json=reset_data)
+        result = response.json()
+        
+        if 'error' in result:
+            error_msg = result['error'].get('message', 'Unknown error')
+            st.error(f"Password reset failed: {error_msg}")
+            log_audit_event("System", "PASSWORD_RESET_FAILED", f"Error for {email}: {error_msg}")
+            return False
+        else:
+            st.success(f"Password reset email sent to {email}")
+            log_audit_event("System", "PASSWORD_RESET_REQUEST", f"Reset requested for {email}")
+            return True
+            
+    except Exception as e:
+        st.error(f"Password reset failed: {str(e)}")
+        log_audit_event("System", "PASSWORD_RESET_FAILED", f"Error for {email}: {str(e)}")
+        return False
+
 def login_form():
     """Display the login form for managers and staff."""
     initialize_session()
@@ -71,7 +105,8 @@ def login_form():
                             log_audit_event("System", "LOGIN_FAILED", f"Unauthorized manager access attempt: {email}")
                             return
 
-                        api_key = os.getenv("FIREBASE_API_KEY")
+                        # Get Firebase API key from Streamlit secrets
+                        api_key = st.secrets.get("FIREBASE_API_KEY")
                         if not api_key:
                             st.error("Firebase API key not configured. Please contact administrator.")
                             return
@@ -105,10 +140,10 @@ def login_form():
 
                 if reset_password:
                     try:
-                        auth.get_user_by_email(email)  # Verify user exists
-                        auth.generate_password_reset_link(email)
-                        st.success(f"Password reset link sent to {email}")
-                        log_audit_event("System", "PASSWORD_RESET_REQUEST", f"Reset requested for {email}")
+                        # Verify user exists first
+                        auth.get_user_by_email(email)
+                        # Send password reset using REST API instead of deprecated method
+                        send_password_reset_email(email)
                     except auth.UserNotFoundError:
                         st.error("User not found")
                         log_audit_event("System", "PASSWORD_RESET_FAILED", f"User not found: {email}")
