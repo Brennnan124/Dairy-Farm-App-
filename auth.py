@@ -1,6 +1,6 @@
 import streamlit as st
 import time
-from firebase import log_audit_event, initialize_firebase  # Corrected import
+from firebase_utils import log_audit_event, initialize_firebase
 
 # Initialize Firebase
 firebase_app = initialize_firebase()
