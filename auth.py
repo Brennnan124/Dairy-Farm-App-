@@ -1,11 +1,6 @@
 import streamlit as st
-import os
 import time
-from firebase_utils import log_audit_event, initialize_firebase
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
+from firebase import log_audit_event, initialize_firebase
 
 # Initialize Firebase
 firebase_app = initialize_firebase()
@@ -44,67 +39,52 @@ def logout():
     log_audit_event("System" if not username else username, "LOGOUT", f"User {username or 'unknown'} logged out")
 
 def login_form():
-    """Display the login form for managers and staff."""
+    """Display a unified login form for managers and staff with simple password check."""
     initialize_session()
     check_inactivity()
 
     with st.sidebar:
         st.subheader("Farm Login")
-        role = st.selectbox("Role", ["Manager", "Staff"], index=None, placeholder="Select your role", key="role_select")
+        with st.form("login_form"):
+            role = st.selectbox("Role", ["Manager", "Staff"], index=None, placeholder="Select your role", key="role_select")
+            username = st.text_input("Username", value="Staff" if role == "Staff" else "", key="username")
+            password = st.text_input("Password", type="password", key="password")
+            submit = st.form_submit_button("Login")
 
-        if role == "Manager":
-            with st.form("manager_login_form"):
-                email = st.text_input("Email", key="manager_email")
-                password = st.text_input("Password", type="password", key="manager_password")
-                submit = st.form_submit_button("Login")
+            if submit:
+                if not role:
+                    st.error("Please select a role.")
+                    log_audit_event("System", "LOGIN_FAILED", "No role selected")
+                    return
+                if not username or not password:
+                    st.error("Please enter both username and password.")
+                    log_audit_event("System", "LOGIN_FAILED", f"Missing username or password for {username or 'unknown'}")
+                    return
 
-                if submit:
-                    # Get manager emails from Streamlit secrets
-                    manager_emails_str = st.secrets.get("MANAGER_EMAILS", "")
-                    manager_emails = [e.strip() for e in manager_emails_str.split(",") if e.strip()]
-                    
-                    if email not in manager_emails:
-                        st.error("Not authorized for manager access")
-                        log_audit_event("System", "LOGIN_FAILED", f"Unauthorized manager access attempt: {email}")
-                        return
-                    
-                    # Get manager password from secrets
-                    manager_password = st.secrets.get("MANAGER_PASSWORD", "manager123")
-                    
-                    # Simple password check instead of Firebase auth
-                    if password == manager_password:
-                        st.session_state.authenticated = True
-                        st.session_state.username = email
-                        st.session_state.role = "Manager"
-                        st.session_state.user_id = f"manager_{email}"
-                        st.session_state.last_activity = time.time()
-                        log_audit_event(email, "MANAGER_LOGIN", f"{email} logged in")
-                        st.rerun()
-                    else:
-                        st.error("Invalid password")
-                        log_audit_event("System", "LOGIN_FAILED", f"Invalid password for: {email}")
+                # Get passwords from Streamlit secrets
+                manager_password = st.secrets.get("MANAGER_PASSWORD", "BMaina@456")
+                staff_password = st.secrets.get("STAFF_PASSWORD", "dairy456")
 
-        elif role == "Staff":
-            with st.form("staff_login_form"):
-                username = st.text_input("Username", value="Staff", key="staff_username")  # Auto-populate
-                password = st.text_input("Password", type="password", key="staff_password")
-                submit = st.form_submit_button("Login")
-
-                if submit:
-                    # Get staff password from secrets
-                    staff_password = st.secrets.get("STAFF_PASSWORD", "dairy456")
-                    
-                    if password == staff_password:
-                        st.session_state.authenticated = True
-                        st.session_state.username = username
-                        st.session_state.role = "Staff"
-                        st.session_state.user_id = "staff_user"
-                        st.session_state.last_activity = time.time()
-                        log_audit_event(username, "STAFF_LOGIN", f"{username} logged in")
-                        st.rerun()
-                    else:
-                        st.error("Invalid staff password")
-                        log_audit_event("System", "LOGIN_FAILED", f"Invalid staff password attempt for: {username}")
+                # Check password based on selected role
+                if role == "Manager" and password == manager_password:
+                    st.session_state.authenticated = True
+                    st.session_state.username = username
+                    st.session_state.role = "Manager"
+                    st.session_state.user_id = f"manager_{username}"
+                    st.session_state.last_activity = time.time()
+                    log_audit_event(username, "MANAGER_LOGIN", f"{username} logged in as Manager")
+                    st.rerun()
+                elif role == "Staff" and password == staff_password:
+                    st.session_state.authenticated = True
+                    st.session_state.username = username
+                    st.session_state.role = "Staff"
+                    st.session_state.user_id = f"staff_{username}"
+                    st.session_state.last_activity = time.time()
+                    log_audit_event(username, "STAFF_LOGIN", f"{username} logged in as Staff")
+                    st.rerun()
+                else:
+                    st.error("Invalid password or role.")
+                    log_audit_event("System", "LOGIN_FAILED", f"Invalid password for {username} as {role}")
 
 def get_role():
     """Return the user's role from session state."""
