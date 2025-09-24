@@ -1,43 +1,3 @@
-import streamlit as st
-import time
-from firebase_utils import log_audit_event, initialize_firebase
-
-# Initialize Firebase
-firebase_app = initialize_firebase()
-
-def initialize_session():
-    """Initialize session state variables."""
-    if 'authenticated' not in st.session_state:
-        st.session_state.authenticated = False
-    if 'username' not in st.session_state:
-        st.session_state.username = ""
-    if 'role' not in st.session_state:
-        st.session_state.role = None
-    if 'user_id' not in st.session_state:
-        st.session_state.user_id = None
-    if 'last_activity' not in st.session_state:
-        st.session_state.last_activity = time.time()
-
-def check_inactivity():
-    """Check for session inactivity and log out if exceeded."""
-    if 'last_activity' in st.session_state and st.session_state.authenticated:
-        current_time = time.time()
-        inactive_duration = current_time - st.session_state.last_activity
-        if inactive_duration > 300:  # 5 minutes
-            logout()
-            st.warning("Session timed out due to inactivity. Please log in again.")
-            st.rerun()
-
-def logout():
-    """Handle logout by clearing session state and logging the event."""
-    username = st.session_state.get("username")
-    st.session_state.authenticated = False
-    st.session_state.username = ""
-    st.session_state.role = None
-    st.session_state.user_id = None
-    st.session_state.last_activity = time.time()
-    log_audit_event("System" if not username else username, "LOGOUT", f"User {username or 'unknown'} logged out")
-
 def login_form():
     """Display a unified login form for managers and staff with simple password check."""
     initialize_session()
@@ -46,21 +6,26 @@ def login_form():
     with st.sidebar:
         st.subheader("Farm Login")
         with st.form("login_form"):
+            # Use a unique key for role selectbox
             role = st.selectbox(
                 "Role",
                 ["Manager", "Staff"],
                 index=None,
                 placeholder="Select your role",
-                key="role_select"
+                key="role_selectbox"
             )
 
-            # Auto-set username based on role
-            if role == "Manager":
-                st.session_state.username = "Manager"
-            elif role == "Staff":
-                st.session_state.username = "Staff"
+            # Reset username in session state when role changes
+            if role and st.session_state.username != role:
+                st.session_state.username = role
 
-            username = st.text_input("Username", value=st.session_state.username, key="username_input")
+            # Use the session state username directly, with a unique key
+            username = st.text_input(
+                "Username",
+                value=st.session_state.username,
+                key="username_input_field",
+                disabled=True  # Make it read-only to prevent user edits
+            )
             password = st.text_input("Password", type="password", key="password")
             submit = st.form_submit_button("Login")
 
@@ -98,19 +63,3 @@ def login_form():
                 else:
                     st.error("Invalid password or role.")
                     log_audit_event("System", "LOGIN_FAILED", f"Invalid password for {username} as {role}")
-
-def get_role():
-    """Return the user's role from session state."""
-    return st.session_state.get("role", None)
-
-def is_authenticated():
-    """Check if the user is authenticated."""
-    return st.session_state.get("authenticated", False)
-
-def logout_button():
-    """Handle logout by displaying a button in the sidebar and triggering logout."""
-    if st.sidebar.button("Logout"):
-        logout()
-
-# Ensure all functions are exportable
-__all__ = ['login_form', 'logout_button', 'is_authenticated', 'get_role']
