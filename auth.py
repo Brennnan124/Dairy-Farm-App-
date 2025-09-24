@@ -46,8 +46,22 @@ def login_form():
     with st.sidebar:
         st.subheader("Farm Login")
         with st.form("login_form"):
-            role = st.selectbox("Role", ["Manager", "Staff"], index=None, placeholder="Select your role", key="role_select")
-            username = st.text_input("Username", value="Staff" if role == "Staff" else "", key="username")
+            role = st.selectbox(
+                "Role",
+                ["Manager", "Staff"],
+                index=None,
+                placeholder="Select your role",
+                key="role_select"
+            )
+
+            # Auto-fill username based on role
+            if role == "Manager":
+                username = st.text_input("Username", value="Manager", key="username")
+            elif role == "Staff":
+                username = st.text_input("Username", value="Staff", key="username")
+            else:
+                username = st.text_input("Username", value="", key="username")
+
             password = st.text_input("Password", type="password", key="password")
             submit = st.form_submit_button("Login")
 
@@ -56,9 +70,9 @@ def login_form():
                     st.error("Please select a role.")
                     log_audit_event("System", "LOGIN_FAILED", "No role selected")
                     return
-                if not username or not password:
-                    st.error("Please enter both username and password.")
-                    log_audit_event("System", "LOGIN_FAILED", f"Missing username or password for {username or 'unknown'}")
+                if not password:
+                    st.error("Please enter your password.")
+                    log_audit_event("System", "LOGIN_FAILED", f"Missing password for {username or 'unknown'}")
                     return
 
                 # Get passwords from Streamlit secrets
