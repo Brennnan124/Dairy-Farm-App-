@@ -10,7 +10,7 @@ def initialize_session():
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
     if 'username' not in st.session_state:
-        st.session_state.username = None
+        st.session_state.username = ""
     if 'role' not in st.session_state:
         st.session_state.role = None
     if 'user_id' not in st.session_state:
@@ -32,7 +32,7 @@ def logout():
     """Handle logout by clearing session state and logging the event."""
     username = st.session_state.get("username")
     st.session_state.authenticated = False
-    st.session_state.username = None
+    st.session_state.username = ""
     st.session_state.role = None
     st.session_state.user_id = None
     st.session_state.last_activity = time.time()
@@ -54,14 +54,13 @@ def login_form():
                 key="role_select"
             )
 
-            # Auto-fill username based on role
+            # Auto-set username based on role
             if role == "Manager":
-                username = st.text_input("Username", value="Manager", key="username")
+                st.session_state.username = "Manager"
             elif role == "Staff":
-                username = st.text_input("Username", value="Staff", key="username")
-            else:
-                username = st.text_input("Username", value="", key="username")
+                st.session_state.username = "Staff"
 
+            username = st.text_input("Username", value=st.session_state.username, key="username_input")
             password = st.text_input("Password", type="password", key="password")
             submit = st.form_submit_button("Login")
 
